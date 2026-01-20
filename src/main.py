@@ -78,7 +78,7 @@ class PRReviewBot:
         logger.info(f"🔍 Reviewing PR #{pr_number} in {repo_name}...")
         
         # 1. Fetch PR details
-        logger.info("  📥 Fetching PR details...")
+        logger.info("Fetching PR details...  📥")
         pr_details = self.github_client.get_pr_details(repo_name, pr_number)
         
         logger.info(f"  📄 Found {len(pr_details.files)} changed files "
