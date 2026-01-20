@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: github-pr-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn src.main:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: WEBHOOK_PORT
+        value: 10000
