@@ -4,9 +4,10 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn src.main:app
+    startCommand: gunicorn -b 0.0.0.0:10000 src.main:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
       - key: WEBHOOK_PORT
         value: 10000
+
