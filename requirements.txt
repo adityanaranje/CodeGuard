@@ -16,3 +16,4 @@ langchain-chroma
 chromadb
 sentence-transformers
 langchain-huggingface
+langchain-community
