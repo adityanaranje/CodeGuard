@@ -1,0 +1,6 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "gunicorn -b 0.0.0.0:$PORT src.main:app"
+restartPolicyType = "ON_FAILURE"
