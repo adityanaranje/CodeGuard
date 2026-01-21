@@ -148,3 +148,45 @@ def get_filter_options():
     
     conn.close()
     return {"repos": repos, "authors": authors}
+
+def get_daily_stats(repo=None, author=None):
+    """Get daily statistics for trend chart."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    
+    where_clause = ""
+    params = []
+    conditions = []
+    
+    if repo:
+        conditions.append("repo_name = ?")
+        params.append(repo)
+    if author:
+        conditions.append("author = ?")
+        params.append(author)
+    
+    if conditions:
+        where_clause = " WHERE " + " AND ".join(conditions)
+        
+    # SQLite uses strftime for date extraction
+    # We want to group by YYYY-MM-DD
+    query = f'''
+        SELECT 
+            strftime('%Y-%m-%d', timestamp) as date,
+            COUNT(*) as total,
+            SUM(CASE WHEN verdict = 'PASS' THEN 1 ELSE 0 END) as pass_count,
+            SUM(CASE WHEN verdict = 'FAIL' THEN 1 ELSE 0 END) as fail_count,
+            SUM(CASE WHEN verdict = 'NEEDS_REVIEW' THEN 1 ELSE 0 END) as needs_review_count
+        FROM review_logs
+        {where_clause}
+        GROUP BY 1
+        ORDER BY 1 ASC
+        LIMIT 30
+    '''
+    
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
