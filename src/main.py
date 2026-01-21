@@ -78,7 +78,7 @@ class PRReviewBot:
         logger.info(f"🔍 Reviewing PR #{pr_number} in {repo_name}...")
         
         # 1. Fetch PR details
-        logger.info("Fetching PR details...  📥")
+        logger.info("  📥 Fetching PR details...")
         pr_details = self.github_client.get_pr_details(repo_name, pr_number)
         
         logger.info(f"  📄 Found {len(pr_details.files)} changed files "
@@ -276,7 +276,13 @@ def api_stats():
     
     stats = db.get_stats(repo, author)
     reviews = db.get_recent_reviews(repo=repo, author=author)
-    return jsonify({"stats": stats, "reviews": reviews})
+    trend_data = db.get_daily_stats(repo, author)
+    
+    return jsonify({
+        "stats": stats, 
+        "reviews": reviews,
+        "trend_data": trend_data
+    })
 
 
 @app.route("/api/filters")
