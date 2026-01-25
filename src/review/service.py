@@ -71,8 +71,22 @@ class LLMReviewer:
         repo_path = "."
         
         try:
+            # 5. Determine which Groq model to use based on PR size
+            total_changes = sum(d.additions + d.deletions for d in code_diffs)
+            model_to_use = self.config.groq_large_model
+            
+            if total_changes < self.config.llm_change_threshold:
+                model_to_use = self.config.groq_small_model
+                print(f"⚡ Small PR detected ({total_changes} lines). Using fast model: {model_to_use}")
+            else:
+                print(f"🧠 Large PR detected ({total_changes} lines). Using powerful model: {model_to_use}")
+
             # Call Agent Orchestrator
-            raw_response = self.agent.review_pr(pr_diff=diff_text, repo_path=repo_path)
+            raw_response = self.agent.review_pr(
+                pr_diff=diff_text, 
+                repo_path=repo_path,
+                model_name=model_to_use
+            )
             
             # Clean up potential markdown JSON
             clean_response = raw_response
