@@ -6,10 +6,10 @@ settings:
   strictness: strict
   
   # Minimum number of rule violations to fail PR
-  min_violations_to_fail: 3
+  min_violations_to_fail: 1
   
   # LLM severity threshold to fail (1-10)
-  llm_severity_threshold: 7
+  llm_severity_threshold: 6
 
 # File and naming rules
 file_rules:
