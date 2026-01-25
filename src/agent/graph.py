@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
@@ -162,3 +163,4 @@ class Agent:
         
         # Return the final code review
         return result["code_review"]
+
