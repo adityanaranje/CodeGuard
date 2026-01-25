@@ -107,6 +107,11 @@ class Config:
     def llm_change_threshold(self) -> int:
         """Get line change threshold for switching models."""
         return int(os.getenv("LLM_CHANGE_THRESHOLD", "150"))
+
+    @property
+    def enable_rag(self) -> bool:
+        """Check if RAG (Deep Context) is enabled."""
+        return os.getenv("ENABLE_RAG", "false").lower() == "true"
     
     @property
     def webhook_port(self) -> int:
