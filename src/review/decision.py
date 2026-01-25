@@ -87,35 +87,46 @@ class DecisionEngine:
         # Determine verdict based on rules and LLM
         verdict = Verdict.PASS
         
-        # Check for critical violations - automatic fail
-        if has_critical:
-            verdict = Verdict.FAIL
-            critical_count = sum(1 for v in violations if v.severity == Severity.CRITICAL)
-            reasons.append(f"Found {critical_count} critical violation(s)")
-        
-        # Check violation count threshold
-        elif len(violations) >= self.config.min_violations_to_fail:
-            verdict = Verdict.FAIL
-            reasons.append(f"Exceeded violation threshold ({len(violations)} >= {self.config.min_violations_to_fail})")
-        
-        # Check LLM severity threshold
-        elif llm_review.severity_score >= self.config.llm_severity_threshold:
-            verdict = Verdict.FAIL
-            reasons.append(f"LLM severity score too high ({llm_review.severity_score}/10)")
-        
-        # Check for security concerns from LLM
-        elif llm_review.security_concerns:
-            verdict = Verdict.NEEDS_REVIEW
-            reasons.append(f"LLM flagged {len(llm_review.security_concerns)} security concern(s)")
+        # Check for any AI-detected bugs
+        has_bugs = any(i.get("type", "").lower() == "bug" for i in llm_review.issues)
         
         # Check for high-severity issues from LLM
         high_severity_issues = [
             i for i in llm_review.issues
             if i.get("severity", "").lower() in ("high", "critical")
         ]
-        if high_severity_issues and verdict == Verdict.PASS:
-            verdict = Verdict.NEEDS_REVIEW
-            reasons.append(f"LLM found {len(high_severity_issues)} high-severity issue(s)")
+
+        # 1. FAIL - Highest Priority
+        if has_critical:
+            verdict = Verdict.FAIL
+            critical_count = sum(1 for v in violations if v.severity == Severity.CRITICAL)
+            reasons.append(f"Found {critical_count} critical violation(s)")
+        
+        elif len(violations) >= self.config.min_violations_to_fail:
+            verdict = Verdict.FAIL
+            reasons.append(f"Exceeded violation threshold ({len(violations)} >= {self.config.min_violations_to_fail})")
+        
+        elif llm_review.severity_score >= self.config.llm_severity_threshold:
+            verdict = Verdict.FAIL
+            reasons.append(f"LLM severity score too high ({llm_review.severity_score}/10)")
+            
+        elif any(i.get("severity", "").lower() == "critical" for i in llm_review.issues):
+            verdict = Verdict.FAIL
+            reasons.append("LLM found critical severity issues")
+
+        # 2. NEEDS_REVIEW - Second Priority
+        if verdict != Verdict.FAIL:
+            if llm_review.security_concerns:
+                verdict = Verdict.NEEDS_REVIEW
+                reasons.append(f"LLM flagged {len(llm_review.security_concerns)} security concern(s)")
+            
+            elif high_severity_issues:
+                verdict = Verdict.NEEDS_REVIEW
+                reasons.append(f"LLM found {len(high_severity_issues)} high-severity issue(s)")
+            
+            elif has_bugs:
+                verdict = Verdict.NEEDS_REVIEW
+                reasons.append("LLM detected potential bugs in the logic")
         
         # If still passing but has warnings
         if verdict == Verdict.PASS and violations:
