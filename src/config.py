@@ -90,8 +90,23 @@ class Config:
     
     @property
     def groq_model(self) -> str:
-        """Get Groq model name from environment."""
+        """Get default Groq model name from environment."""
         return os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    
+    @property
+    def groq_small_model(self) -> str:
+        """Get small Groq model for minor changes."""
+        return os.getenv("GROQ_SMALL_MODEL", "llama-3.1-8b-instant")
+    
+    @property
+    def groq_large_model(self) -> str:
+        """Get large Groq model for significant changes."""
+        return os.getenv("GROQ_LARGE_MODEL", "llama-3.3-70b-versatile")
+    
+    @property
+    def llm_change_threshold(self) -> int:
+        """Get line change threshold for switching models."""
+        return int(os.getenv("LLM_CHANGE_THRESHOLD", "150"))
     
     @property
     def webhook_port(self) -> int:
