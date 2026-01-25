@@ -1,183 +1,372 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PR Review Dashboard</title>
+    <title>CodeGuard Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* Modern Dark Mode Tweaks */
+        :root {
+            --bg-dark: #050b14;
+            --card-bg: rgba(20, 30, 48, 0.7);
+            --accent-cyan: #00f2ff;
+            --accent-magenta: #ff69b4;
+            /* Hot Pink */
+            --accent-yellow: #f9d423;
+            --text-main: #e0e6ed;
+            --text-muted: #94a3b8;
+            --neon-glow: 0 0 15px rgba(0, 242, 255, 0.4);
+        }
+
         body {
-            background-color: #212529;
-            /* Dark background matches Bootstrap dark theme */
+            background: radial-gradient(circle at top right, #0a192f, #050b14);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
         }
 
-        .card {
-            background-color: #2b3035;
-            /* Slightly lighter than body */
-            border: 1px solid #495057;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            /* Darker shadow */
-            margin-bottom: 20px;
+        /* Glassmorphism Sidebar-ish Layout */
+        .dashboard-container {
+            min-height: 100vh;
         }
 
-        h5 {
-            color: #e9ecef;
+
+        .main-content {
+            padding: 2.5rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(0, 242, 255, 0.6);
+            letter-spacing: -1px;
+        }
+
+        .logo span {
+            color: var(--accent-cyan);
+        }
+
+        /* Premium Cards */
+        .glass-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 2rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            height: 100%;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border-color: rgba(0, 242, 255, 0.3);
+        }
+
+        .metric-title {
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            margin-bottom: 1rem;
         }
 
         .metric-value {
-            font-size: 2.5rem;
+            font-size: 5rem;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+        }
+
+        /* Distribution Charts */
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        /* Recent Reviews List Style */
+        .review-item {
+            display: flex;
+            align-items: center;
+            padding: 1.25rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 16px;
+            margin-bottom: 1rem;
+            border-left: 4px solid transparent;
+            transition: 0.3s;
+        }
+
+        .review-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+            transform: translateX(10px);
+        }
+
+        .review-item.pass {
+            border-left-color: var(--accent-cyan);
+        }
+
+        .review-item.fail {
+            border-left-color: var(--accent-magenta);
+        }
+
+        .review-item.needs {
+            border-left-color: var(--accent-yellow);
+        }
+
+        .review-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 1.5rem;
             font-weight: bold;
+        }
+
+        .review-info h6 {
+            margin: 0;
+            font-weight: 600;
             color: #fff;
         }
 
-        .verdict-pass {
-            color: #2ea043;
-            /* GitHub Success Green */
-            font-weight: bold;
+        .review-info p {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--text-muted);
         }
 
-        .verdict-fail {
-            color: #da3633;
-            /* GitHub Failure Red */
-            font-weight: bold;
+        .time-badge {
+            margin-left: auto;
+            font-size: 0.75rem;
+            color: var(--text-muted);
         }
 
-        .verdict-needing {
-            color: #d29922;
-            /* GitHub Warning Yellow */
-            font-weight: bold;
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
         }
 
-        .navbar-brand {
-            font-weight: bold;
-            letter-spacing: 0.5px;
+        ::-webkit-scrollbar-track {
+            background: var(--bg-dark);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+
+        .filter-section {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .custom-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            color: #fff;
+            padding: 0.75rem 1.5rem;
+            outline: none;
+            transition: 0.3s;
+            flex: 1;
+        }
+
+        .custom-select:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: var(--neon-glow);
+            background-color: #0a192f;
+        }
+
+        .custom-select option {
+            background-color: #0a192f;
+            color: #fff;
+            padding: 10px;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2.5rem;
+            margin-top: 2rem;
+            flex-grow: 1;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1;
+        }
+
+        .stat-value.pass {
+            color: var(--accent-cyan);
+        }
+
+        .stat-value.fail {
+            color: var(--accent-magenta);
+        }
+
+        .stat-value.needs {
+            color: var(--accent-yellow);
+        }
+
+        .btn-apply {
+            background: linear-gradient(135deg, #00f2ff, #00d2ff);
+            border: none;
+            border-radius: 12px;
+            color: #050b14;
+            padding: 0.75rem 2rem;
+            font-weight: 700;
+            transition: 0.3s;
+        }
+
+        .btn-apply:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(0, 242, 255, 0.5);
         }
     </style>
 </head>
 
 <body>
-    <nav class="navbar navbar-dark bg-dark mb-4 border-bottom border-secondary">
-        <div class="container">
-            <a class="navbar-brand" href="#">🤖 PR Review Bot Dashboard</a>
-        </div>
-    </nav>
+    <div class="dashboard-container">
 
-    <div class="container">
-        <!-- Filters -->
-        <div class="card p-3 mb-4">
-            <div class="row g-3">
-                <div class="col-md-5">
-                    <label for="repoFilter" class="form-label text-light">Repository</label>
-                    <select class="form-select bg-dark text-light border-secondary" id="repoFilter">
+        <main class="main-content">
+            <header class="header">
+                <div class="logo">Code<span>Guard</span></div>
+                <div class="filter-section">
+                    <select class="custom-select" id="repoFilter">
                         <option value="">All Repositories</option>
                     </select>
-                </div>
-                <div class="col-md-5">
-                    <label for="authorFilter" class="form-label text-light">Author</label>
-                    <select class="form-select bg-dark text-light border-secondary" id="authorFilter">
+                    <select class="custom-select" id="authorFilter">
                         <option value="">All Authors</option>
                     </select>
+                    <button class="btn-apply" onclick="fetchData()">APPLY FILTERS</button>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button class="btn btn-primary w-100" onclick="fetchData()">Apply Filters</button>
-                </div>
-            </div>
-        </div>
+            </header>
 
-        <!-- Metrics -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card text-center p-3">
-                    <h5 class="text-muted">Total Reviews</h5>
-                    <div class="metric-value" id="totalReviews">-</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-center p-3">
-                    <h5 class="text-muted">Avg Severity</h5>
-                    <div class="metric-value" id="avgSeverity">-</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Trend Chart -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card p-3">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5>PR Trends (Last 30 days)</h5>
-                        <!-- Toggle for Chart Mode -->
-                        <div class="btn-group" role="group" aria-label="Chart mode">
-                            <input type="radio" class="btn-check" name="chartMode" id="modeTotal" value="total" checked
-                                onchange="updateTrendChartConfig()">
-                            <label class="btn btn-outline-primary" for="modeTotal">Total PRs</label>
-
-                            <input type="radio" class="btn-check" name="chartMode" id="modeSplit" value="split"
-                                onchange="updateTrendChartConfig()">
-                            <label class="btn btn-outline-primary" for="modeSplit">Split by Verdict</label>
+            <div class="row g-4 mb-4">
+                <div class="col-md-5">
+                    <div class="glass-card d-flex flex-column">
+                        <div class="metric-title">Snapshot</div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-label">Total</div>
+                                <div class="stat-value" id="totalReviews">0</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Passed</div>
+                                <div class="stat-value pass" id="passCount">0</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Failed</div>
+                                <div class="stat-value fail" id="failCount">0</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Needs Review</div>
+                                <div class="stat-value needs" id="needsReviewCount">0</div>
+                            </div>
+                        </div>
+                        <div
+                            style="color: var(--accent-cyan); font-weight: 600; font-size: 0.8rem; margin-top: 1.5rem;">
+                            ↑ 12% activity from last week
                         </div>
                     </div>
-                    <canvas id="trendsChart" height="80"></canvas>
+                </div>
+                <div class="col-md-7">
+                    <div class="glass-card">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <div class="metric-title">Verdict Distribution</div>
+                            <div id="chartLegend" style="display: flex; gap: 1rem; font-size: 0.75rem;"></div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="verdictChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Distribution Charts -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card p-3">
-                    <h5>Verdict Distribution</h5>
-                    <canvas id="verdictChart"></canvas>
+            <div class="row g-4 mb-4">
+                <div class="col-md-8">
+                    <div class="glass-card">
+                        <div class="metric-title">Code Health Trends</div>
+                        <div style="height: 300px;">
+                            <canvas id="trendsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="glass-card">
+                        <div class="metric-title">Recent Activity</div>
+                        <div id="activityList" style="max-height: 300px; overflow-y: auto; padding-right: 0.5rem;">
+                            <!-- List of review items -->
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card p-3">
-                    <h5>Top Active Authors</h5>
-                    <canvas id="authorChart"></canvas>
-                </div>
-            </div>
-        </div>
 
-        <!-- Table -->
-        <div class="card p-3">
-            <h5>Recent Activity</h5>
-            <div class="table-responsive">
-                <table class="table table-hover table-dark" id="reviewsTable">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Repo</th>
-                            <th>PR</th>
-                            <th>Author</th>
-                            <th>Files</th>
-                            <th>Changes</th>
-                            <th>Verdict</th>
-                            <th>Sev</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- Rows will be populated by JS -->
-                    </tbody>
-                </table>
+            <div class="row g-4">
+                <div class="col-12">
+                    <div class="glass-card">
+                        <div class="metric-title">Developer Velocity</div>
+                        <div style="height: 200px;">
+                            <canvas id="authorChart"></canvas>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
+        </main>
     </div>
 
     <script>
-        // Chart Defaults for Dark Mode
-        Chart.defaults.color = '#adb5bd';
-        Chart.defaults.borderColor = '#495057';
+        // Use Outfit font for charts
+        Chart.defaults.font.family = "'Outfit', sans-serif";
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.05)';
 
         let verdictChartInstance = null;
         let authorChartInstance = null;
         let trendsChartInstance = null;
-        let cachedTrendData = [];
 
         async function init() {
-            // Load filters
             try {
                 const response = await fetch('/api/filters');
                 const data = await response.json();
@@ -216,177 +405,163 @@
                 const response = await fetch(`/api/stats?${params.toString()}`);
                 const data = await response.json();
 
-                updateMetrics(data);
-                updateCharts(data.stats);
-                updateTable(data.reviews);
+                document.getElementById('totalReviews').textContent = data.stats.total_reviews || 0;
+                document.getElementById('passCount').textContent = data.stats.verdict_counts.PASS || 0;
+                document.getElementById('failCount').textContent = data.stats.verdict_counts.FAIL || 0;
+                document.getElementById('needsReviewCount').textContent = data.stats.verdict_counts.NEEDS_REVIEW || 0;
 
-                cachedTrendData = data.trend_data;
-                updateTrendChartConfig(); // Initial render
+                updateVerdictChart(data.stats.verdict_counts);
+                updateAuthorChart(data.stats.author_stats);
+                updateTrendsChart(data.trend_data);
+                updateActivityList(data.reviews);
 
             } catch (error) {
                 console.error('Error fetching data:', error);
             }
         }
 
-        function updateMetrics(data) {
-            document.getElementById('totalReviews').textContent = data.stats.total_reviews;
-
-            let totalSeverity = 0;
-            data.reviews.forEach(r => totalSeverity += r.llm_severity);
-
-            if (data.reviews.length > 0) {
-                document.getElementById('avgSeverity').textContent = (totalSeverity / data.reviews.length).toFixed(1);
-            } else {
-                document.getElementById('avgSeverity').textContent = "0";
-            }
-        }
-
-        function updateTrendChartConfig() {
-            const ctx = document.getElementById('trendsChart').getContext('2d');
-            const mode = document.querySelector('input[name="chartMode"]:checked').value;
-
-            if (trendsChartInstance) trendsChartInstance.destroy();
-
-            const labels = cachedTrendData.map(d => d.date);
-            let datasets = [];
-
-            if (mode === 'total') {
-                datasets = [{
-                    label: 'Total PRs',
-                    data: cachedTrendData.map(d => d.total),
-                    borderColor: '#0d6efd', // Bootstrap Primary Blue
-                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                }];
-            } else {
-                datasets = [
-                    {
-                        label: 'Pass',
-                        data: cachedTrendData.map(d => d.pass_count),
-                        borderColor: '#2ea043',
-                        backgroundColor: 'transparent',
-                        tension: 0.3
-                    },
-                    {
-                        label: 'Fail',
-                        data: cachedTrendData.map(d => d.fail_count),
-                        borderColor: '#da3633',
-                        backgroundColor: 'transparent',
-                        tension: 0.3
-                    },
-                    {
-                        label: 'Needs Review',
-                        data: cachedTrendData.map(d => d.needs_review_count),
-                        borderColor: '#d29922',
-                        backgroundColor: 'transparent',
-                        tension: 0.3
-                    }
-                ];
-            }
-
-            trendsChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { precision: 0 }
-                        }
-                    }
-                }
-            });
-        }
-
-        function updateCharts(stats) {
-            // Verdict Chart
-            const verdictCtx = document.getElementById('verdictChart').getContext('2d');
+        function updateVerdictChart(counts) {
+            const ctx = document.getElementById('verdictChart').getContext('2d');
             if (verdictChartInstance) verdictChartInstance.destroy();
 
-            const labels = Object.keys(stats.verdict_counts);
-            const data = Object.values(stats.verdict_counts);
-            const colors = labels.map(label => {
-                if (label === 'PASS') return '#2ea043';
-                if (label === 'FAIL') return '#da3633';
-                if (label === 'NEEDS_REVIEW') return '#d29922';
-                return '#17a2b8';
-            });
+            const labels = Object.keys(counts);
+            const data = Object.values(counts);
 
-            verdictChartInstance = new Chart(verdictCtx, {
+            const colorMap = {
+                'PASS': '#00f2ff',
+                'FAIL': '#ff69b4',
+                'NEEDS_REVIEW': '#f9d423'
+            };
+            const backgroundColors = labels.map(label => colorMap[label] || '#94a3b8');
+
+            verdictChartInstance = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
                     datasets: [{
                         data: data,
-                        backgroundColor: colors,
-                        borderWidth: 0
-                    }]
-                }
-            });
-
-            // Author Chart
-            const authorCtx = document.getElementById('authorChart').getContext('2d');
-            if (authorChartInstance) authorChartInstance.destroy();
-
-            authorChartInstance = new Chart(authorCtx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(stats.author_stats),
-                    datasets: [{
-                        label: 'Reviews Count',
-                        data: Object.values(stats.author_stats),
-                        backgroundColor: '#0d6efd'
+                        backgroundColor: backgroundColors,
+                        hoverOffset: 20,
+                        borderWidth: 0,
+                        borderRadius: 5
                     }]
                 },
                 options: {
-                    scales: {
-                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '75%',
+                    plugins: {
+                        legend: { display: false }
                     }
                 }
             });
         }
 
-        function updateTable(reviews) {
-            const tbody = document.querySelector('#reviewsTable tbody');
-            tbody.innerHTML = '';
+        function updateAuthorChart(stats) {
+            const ctx = document.getElementById('authorChart').getContext('2d');
+            if (authorChartInstance) authorChartInstance.destroy();
+
+            // Safety limit to top 10 if not already handled by backend
+            const sortedEntries = Object.entries(stats)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+
+            const labels = sortedEntries.map(e => e[0]);
+            const data = sortedEntries.map(e => e[1]);
+
+            authorChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'PRs Reviewed',
+                        data: data,
+                        backgroundColor: 'rgba(0, 242, 255, 0.2)',
+                        borderColor: '#00f2ff',
+                        borderWidth: 2,
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, grid: { display: false } },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function updateTrendsChart(trendData) {
+            const ctx = document.getElementById('trendsChart').getContext('2d');
+            if (trendsChartInstance) trendsChartInstance.destroy();
+
+            trendsChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: trendData.map(d => d.date),
+                    datasets: [{
+                        label: 'PR Activity',
+                        data: trendData.map(d => d.total),
+                        borderColor: '#00f2ff',
+                        backgroundColor: 'rgba(0, 242, 255, 0.05)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointBackgroundColor: '#00f2ff',
+                        pointBorderColor: '#050b14',
+                        pointBorderWidth: 2,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        function updateActivityList(reviews) {
+            const container = document.getElementById('activityList');
+            container.innerHTML = '';
 
             reviews.forEach(review => {
-                const tr = document.createElement('tr');
+                const div = document.createElement('div');
+                let statusClass = 'needs';
+                let icon = '⚡';
 
-                // Handle Timezone (Force IST)
-                let timestamp = review.timestamp;
-                if (!timestamp.endsWith('Z') && !timestamp.includes('+')) {
-                    timestamp += 'Z'; // Assume naive times are UTC from Render
+                if (review.verdict === 'PASS') {
+                    statusClass = 'pass';
+                    icon = '✓';
+                } else if (review.verdict === 'FAIL') {
+                    statusClass = 'fail';
+                    icon = '×';
                 }
-                const dateObj = new Date(timestamp);
-                const date = dateObj.toLocaleString('en-IN', {
-                    timeZone: 'Asia/Kolkata',
-                    day: '2-digit', month: '2-digit', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit', second: '2-digit',
-                    hour12: false
-                });
 
-                let verdictClass = '';
-                if (review.verdict === 'PASS') verdictClass = 'verdict-pass';
-                else if (review.verdict === 'FAIL') verdictClass = 'verdict-fail';
-                else verdictClass = 'verdict-needing';
+                div.className = `review-item ${statusClass}`;
 
-                tr.innerHTML = `
-                    <td><small>${date}</small></td>
-                    <td>${review.repo_name.split('/')[1] || review.repo_name}</td>
-                    <td>#${review.pr_number}</td>
-                    <td>${review.author}</td>
-                    <td>${review.files_changed}</td>
-                    <td>${review.total_changes}</td>
-                    <td class="${verdictClass}">${review.verdict}</td>
-                    <td>${review.llm_severity}</td>
+                // Format relative time (mocking for beauty)
+                const date = new Date(review.timestamp);
+                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                div.innerHTML = `
+                    <div class="review-icon" style="background: rgba(255,255,255,0.05); color: #fff;">${icon}</div>
+                    <div class="review-info">
+                        <h6>PR #${review.pr_number} - ${review.repo_name.split('/')[1]}</h6>
+                        <p>@${review.author} • ${review.files_changed} files changed</p>
+                    </div>
+                    <div class="time-badge">${timeStr}</div>
                 `;
-                tbody.appendChild(tr);
+                container.appendChild(div);
             });
         }
 
