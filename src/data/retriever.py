@@ -1,8 +1,6 @@
 import os
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from typing import Optional
 
 def get_code_retriever(repo_path: str):
@@ -55,7 +53,10 @@ def get_code_retriever(repo_path: str):
     )
     splits = text_splitter.split_documents(docs)
     
-    # 3. Vector Store
+    # 3. Vector Store - Moving heavy imports here to save global memory
+    from langchain_chroma import Chroma
+    from langchain_huggingface import HuggingFaceEmbeddings
+    
     # Using HuggingFaceEmbeddings as a robust, free default
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     
