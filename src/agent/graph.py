@@ -101,17 +101,26 @@ class Agent:
             "messages": [response]
         }
         
-    def review_pr(self, pr_diff: str, repo_path: str) -> str:
+    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None) -> str:
         """
         Public entry point to review a PR.
         
         Args:
             pr_diff: The diff string of the PR.
             repo_path: Path to local repository for retrieval.
+            model_name: Optional model name to use for this review.
             
         Returns:
             The raw code review string (JSON content).
         """
+        # Update model if a specific one is requested
+        if model_name:
+            self.model = ChatGroq(
+                api_key=self.config.groq_api_key,
+                model_name=model_name,
+                temperature=0.2
+            )
+
         # 1. Initialize Retriever (if needed or reuse)
         if not self.retriever:
             self.retriever = get_code_retriever(repo_path)
