@@ -3,7 +3,7 @@
 
 settings:
   # Overall strictness: lenient, moderate, strict
-  strictness: moderate
+  strictness: strict
   
   # Minimum number of rule violations to fail PR
   min_violations_to_fail: 3
@@ -14,10 +14,10 @@ settings:
 # File and naming rules
 file_rules:
   # Maximum lines per file
-  max_file_lines: 500
+  max_file_lines: 400
   
   # Maximum line length
-  max_line_length: 120
+  max_line_length: 100
   
   # Required file patterns (regex)
   naming_patterns:
@@ -27,59 +27,67 @@ file_rules:
 # Prohibited patterns - will flag as violations
 prohibited_patterns:
   - name: "Hardcoded API Keys"
-    pattern: "(api[_-]?key|apikey|secret[_-]?key)\\s*[=:]\\s*['\"][A-Za-z0-9_]{20,}['\"]"
+    pattern: "(api[_-]?key|apikey|secret[_-]?key|access[_-]?token)\\s*[=:]\\s*['\"][A-Za-z0-9_]{20,}['\"]"
     severity: critical
-    message: "Hardcoded API key detected. Use environment variables instead."
+    message: "Hardcoded credential detected. Use environment variables or a secret manager."
     
+  - name: "Dangerous Functions"
+    pattern: "\\b(eval\\(|exec\\(|os\\.system\\(|subprocess\\.run\\(shell=True)"
+    severity: critical
+    message: "Use of dangerous functions detected. This is a security risk."
+
   - name: "Console/Print Statements"
-    pattern: "\\b(console\\.log|print\\()(?!.*#\\s*debug)"
+    pattern: "\\b(console\\.log|print\\()(?![^\\n]*#\\s*debug)"
     severity: warning
-    message: "Debug statement found. Remove before merging to production."
+    message: "Debug statement found. Use a proper logging library instead."
     
   - name: "TODO/FIXME Comments"
     pattern: "(TODO|FIXME|HACK|XXX):"
     severity: info
-    message: "Unresolved TODO/FIXME comment found."
+    message: "Unresolved TODO/FIXME comment found. Ensure these are tracked in the backlog."
     
   - name: "Hardcoded Passwords"
-    pattern: "(password|passwd|pwd)\\s*[=:]\\s*['\"][^'\"]+['\"]"
+    pattern: "(password|passwd|pwd|secret)\\s*[=:]\\s*['\"][^'\"]+['\"]"
     severity: critical
-    message: "Hardcoded password detected. This is a security risk."
+    message: "Hardcoded password detected. Use environment variables."
     
   - name: "IP Addresses"
-    pattern: "\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b(?!.*#\\s*allowed)"
+    pattern: "\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b(?![^\\n]*#\\s*allowed)"
     severity: warning
-    message: "Hardcoded IP address found. Consider using configuration."
+    message: "Hardcoded IP address found. Use configuration files or DNS names."
 
 # Required patterns - must be present in certain files
 required_patterns:
   - name: "Python Docstrings"
     applies_to: "\\.py$"
     pattern: "^\\s*(def|class)\\s+\\w+.*:\\s*$\\n\\s*['\"]['\"]['\"]"
-    severity: info
-    message: "Functions/classes should have docstrings."
+    severity: error
+    message: "All functions and classes must have docstrings for documentation."
     
   - name: "Type Hints"
     applies_to: "\\.py$"
     pattern: "def\\s+\\w+\\([^)]*:\\s*\\w+"
-    severity: info
-    message: "Consider adding type hints to function parameters."
+    severity: warning
+    message: "Consider adding type hints to facilitate better code maintainability."
 
 # Language-specific rules
 language_rules:
   python:
     - no_star_imports: true
     - require_if_name_main: true
+    - prefer_list_comprehension: true
     
   javascript:
     - prefer_const: true
     - no_var: true
+    - use_strict: true
 
 # Review focus areas for LLM
 llm_review_focus:
-  - "Security vulnerabilities"
-  - "Error handling"
-  - "Code readability"
-  - "Performance issues"
-  - "Best practices"
-  - "Potential bugs"
+  - "Security vulnerabilities (Injection, XSS, CSRF)"
+  - "Efficiency and performance bottlenecks"
+  - "Adherence to SOLID principles"
+  - "Error handling and resilience"
+  - "Potential race conditions or concurrency issues"
+  - "Logical correctness and edge cases"
+
