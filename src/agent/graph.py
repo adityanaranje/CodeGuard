@@ -122,16 +122,15 @@ class Agent:
                 temperature=0.2
             )
 
-        # 1. Initialize Retriever (if needed or reuse)
-        if not self.retriever:
+        # 1. Initialize Retriever (if enabled and not already initialized)
+        if self.config.enable_rag and not self.retriever:
             self.retriever = get_code_retriever(repo_path)
             
-        # 2. Retrieve Context
+        # 2. Retrieve Context (only if RAG is enabled)
         retrieved_content = ""
-        if self.retriever:
+        if self.config.enable_rag and self.retriever:
             try:
                 # Query with the first chunk of the diff to find relevant files
-                # Limiting query size is usually good practice
                 docs = self.retriever.invoke(pr_diff[:2000])
                 retrieved_content = "\n\n".join([d.page_content for d in docs])
             except Exception as e:
@@ -163,4 +162,3 @@ class Agent:
         
         # Return the final code review
         return result["code_review"]
-
