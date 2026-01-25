@@ -327,7 +327,15 @@
             <div class="row g-4 mb-4">
                 <div class="col-md-8">
                     <div class="glass-card">
-                        <div class="metric-title">Code Health Trends</div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="metric-title mb-0">Code Health Trends</div>
+                            <div class="d-flex align-items-center"
+                                style="gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+                                <input type="checkbox" id="showAllTrends" checked onchange="fetchData()"
+                                    style="cursor: pointer; accent-color: var(--accent-cyan); width: 16px; height: 16px;">
+                                <label for="showAllTrends" style="cursor: pointer; margin-bottom: 0;">Show All</label>
+                            </div>
+                        </div>
                         <div style="height: 300px;">
                             <canvas id="trendsChart"></canvas>
                         </div>
@@ -498,33 +506,84 @@
             const ctx = document.getElementById('trendsChart').getContext('2d');
             if (trendsChartInstance) trendsChartInstance.destroy();
 
+            const showAll = document.getElementById('showAllTrends').checked;
+            let datasets = [];
+
+            if (showAll) {
+                datasets = [{
+                    label: 'Total PRs',
+                    data: trendData.map(d => d.total),
+                    borderColor: '#00f2ff',
+                    backgroundColor: 'rgba(0, 242, 255, 0.05)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3,
+                    pointBackgroundColor: '#00f2ff',
+                    pointBorderColor: '#050b14',
+                    pointBorderWidth: 2,
+                    pointRadius: 4
+                }];
+            } else {
+                datasets = [
+                    {
+                        label: 'Passed',
+                        data: trendData.map(d => d.pass_count || 0),
+                        borderColor: '#00f2ff',
+                        backgroundColor: 'transparent',
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'Failed',
+                        data: trendData.map(d => d.fail_count || 0),
+                        borderColor: '#ff69b4',
+                        backgroundColor: 'transparent',
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'Needs Review',
+                        data: trendData.map(d => d.needs_review_count || 0),
+                        borderColor: '#f9d423',
+                        backgroundColor: 'transparent',
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 3
+                    }
+                ];
+            }
+
             trendsChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: trendData.map(d => d.date),
-                    datasets: [{
-                        label: 'PR Activity',
-                        data: trendData.map(d => d.total),
-                        borderColor: '#00f2ff',
-                        backgroundColor: 'rgba(0, 242, 255, 0.05)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 3,
-                        pointBackgroundColor: '#00f2ff',
-                        pointBorderColor: '#050b14',
-                        pointBorderWidth: 2,
-                        pointRadius: 4
-                    }]
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        y: { beginAtZero: true },
-                        x: { grid: { display: false } }
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
                     },
                     plugins: {
-                        legend: { display: false }
+                        legend: {
+                            display: !showAll,
+                            position: 'top',
+                            align: 'end',
+                            labels: {
+                                boxWidth: 10,
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        }
                     }
                 }
             });
