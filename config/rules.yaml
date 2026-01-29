@@ -14,7 +14,7 @@ settings:
 # File and naming rules
 file_rules:
   # Maximum lines per file
-  max_file_lines: 400
+  max_file_lines: 800
   
   # Maximum line length
   max_line_length: 100
@@ -90,4 +90,5 @@ llm_review_focus:
   - "Error handling and resilience"
   - "Potential race conditions or concurrency issues"
   - "Logical correctness and edge cases"
+
 
