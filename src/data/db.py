@@ -127,12 +127,39 @@ def get_stats(repo=None, author=None):
     c.execute(f'SELECT author, COUNT(*) as count FROM review_logs{where_clause} GROUP BY author ORDER BY count DESC LIMIT 10', params)
     author_stats = dict(c.fetchall())
 
+    # Calculate Activity Change (Last 7 days vs previous 7 days)
+    # Using UTC now for consistency
+    now = datetime.now(timezone.utc)
+    
+    # Last 7 days
+    c.execute(f'''
+        SELECT COUNT(*) FROM review_logs 
+        {where_clause} {" AND " if where_clause else " WHERE "}
+        timestamp >= datetime('now', '-7 days')
+    ''', params)
+    last_7_days = c.fetchone()[0]
+    
+    # Previous 7 days
+    c.execute(f'''
+        SELECT COUNT(*) FROM review_logs 
+        {where_clause} {" AND " if where_clause else " WHERE "}
+        timestamp >= datetime('now', '-14 days') AND timestamp < datetime('now', '-7 days')
+    ''', params)
+    prev_7_days = c.fetchone()[0]
+    
+    activity_change = 0
+    if prev_7_days > 0:
+        activity_change = round(((last_7_days - prev_7_days) / prev_7_days) * 100)
+    elif last_7_days > 0:
+        activity_change = 100 # New activity
+
     conn.close()
     
     return {
         "total_reviews": total_reviews,
         "verdict_counts": verdict_counts,
-        "author_stats": author_stats
+        "author_stats": author_stats,
+        "activity_change": activity_change
     }
 
 def get_filter_options():
