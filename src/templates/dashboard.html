@@ -305,9 +305,9 @@
                                 <div class="stat-value needs" id="needsReviewCount">0</div>
                             </div>
                         </div>
-                        <div
-                            style="color: var(--accent-cyan); font-weight: 600; font-size: 0.8rem; margin-top: 1.5rem;">
-                            ↑ 12% activity from last week
+                        <div style="color: var(--accent-cyan); font-weight: 600; font-size: 0.8rem; margin-top: 1.5rem;"
+                            id="activityContainer">
+                            <span id="activityIcon">↑</span> <span id="activityValue">0</span>% activity from last week
                         </div>
                     </div>
                 </div>
@@ -417,6 +417,21 @@
                 document.getElementById('passCount').textContent = data.stats.verdict_counts.PASS || 0;
                 document.getElementById('failCount').textContent = data.stats.verdict_counts.FAIL || 0;
                 document.getElementById('needsReviewCount').textContent = data.stats.verdict_counts.NEEDS_REVIEW || 0;
+
+                // Update Activity Change
+                const change = data.stats.activity_change || 0;
+                const container = document.getElementById('activityContainer');
+                const icon = document.getElementById('activityIcon');
+                const value = document.getElementById('activityValue');
+
+                value.textContent = Math.abs(change);
+                if (change >= 0) {
+                    icon.textContent = '↑';
+                    container.style.color = 'var(--accent-cyan)';
+                } else {
+                    icon.textContent = '↓';
+                    container.style.color = 'var(--accent-magenta)';
+                }
 
                 updateVerdictChart(data.stats.verdict_counts);
                 updateAuthorChart(data.stats.author_stats);
