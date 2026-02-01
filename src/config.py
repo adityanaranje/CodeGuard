@@ -36,6 +36,13 @@ class Config:
         else:
             self.rules_path = self.project_root / "config" / "rules.yaml"
         
+        # Ensure LangChain environment variables are explicitly in os.environ
+        # for tracing to work reliably across different execution contexts.
+        for key in ["LANGCHAIN_TRACING_V2", "LANGCHAIN_ENDPOINT", "LANGCHAIN_API_KEY", "LANGCHAIN_PROJECT"]:
+            val = os.getenv(key)
+            if val:
+                os.environ[key] = val
+        
         self._rules: Optional[Dict[str, Any]] = None
     
     @property
