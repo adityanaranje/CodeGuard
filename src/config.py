@@ -119,6 +119,16 @@ class Config:
         return int(os.getenv("WEBHOOK_PORT", "5000"))
     
     @property
+    def langsmith_tracing(self) -> bool:
+        """Check if LangSmith tracing is enabled."""
+        return os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+
+    @property
+    def langsmith_project(self) -> str:
+        """Get LangSmith project name."""
+        return os.getenv("LANGCHAIN_PROJECT", "github-pr-reviewer")
+    
+    @property
     def rules(self) -> Dict[str, Any]:
         """Load and cache rules configuration."""
         if self._rules is None:
