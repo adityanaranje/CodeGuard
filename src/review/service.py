@@ -23,6 +23,8 @@ class LLMReview:
     security_concerns: List[str]
     positive_feedback: List[str]
     raw_response: str
+    generated_tests: Optional[str] = None
+    dependency_warnings: List[str] = None
 
 
 class LLMReviewer:
@@ -39,6 +41,47 @@ class LLMReviewer:
         # Initialize the LangGraph Agent
         self.agent = Agent(config) 
         self.diff_parser = DiffParser()
+    
+    def generate_pr_description(self, diffs: List[FileDiff], pr_title: str) -> str:
+        """
+        Generate a PR description from the diff when the body is empty.
+        
+        Args:
+            diffs: List of file diffs.
+            pr_title: The PR title.
+            
+        Returns:
+            Generated description string.
+        """
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import SystemMessage, HumanMessage
+        
+        # Format diff for analysis
+        diff_text = self.diff_parser.format_for_review(diffs, max_lines=500)
+        
+        # Use a simple model for this task
+        model = ChatGroq(
+            api_key=self.config.groq_api_key,
+            model_name=self.config.groq_small_model,
+            temperature=0.3
+        )
+        
+        system_prompt = """You are a technical writer helping developers write clear PR descriptions.
+        
+        Given a PR title and the code diff, generate a concise PR description that includes:
+        1. A brief summary (1-2 sentences)
+        2. Key changes (bullet points)
+        3. Impact/rationale (if evident from the changes)
+        
+        Keep it professional and concise. Use markdown formatting."""
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"PR Title: {pr_title}\n\nCode Changes:\n{diff_text}")
+        ]
+        
+        response = model.invoke(messages)
+        return response.content
     
     def review(
         self,
@@ -60,8 +103,18 @@ class LLMReviewer:
                 suggestions=[],
                 security_concerns=[],
                 positive_feedback=[],
-                raw_response=""
+                raw_response="",
+                generated_tests=None
             )
+        
+        # Run dependency analysis
+        from src.analysis.dependencies import DependencyAnalyzer
+        dependency_warnings = []
+        try:
+            analyzer = DependencyAnalyzer(repo_path=".")
+            dependency_warnings = analyzer.analyze_impact(code_diffs)
+        except Exception as e:
+            print(f"Dependency analysis failed: {e}")
         
         # Format the diff for the agent
         diff_text = self.diff_parser.format_for_review(code_diffs, max_lines=1000)
@@ -89,8 +142,13 @@ class LLMReviewer:
                 task_description=pr_body
             )
             
-            # Clean up potential markdown JSON
-            clean_response = raw_response
+            # Parse the response (now returns JSON with code_review and generated_tests)
+            agent_result = json.loads(raw_response)
+            code_review_str = agent_result.get("code_review", "")
+            generated_tests_str = agent_result.get("generated_tests", "")
+            
+            # Clean up potential markdown JSON from code_review
+            clean_response = code_review_str
             if "```json" in clean_response:
                 clean_response = clean_response.split("```json")[1].split("```")[0].strip()
             elif "```" in clean_response:
@@ -105,7 +163,9 @@ class LLMReviewer:
                 suggestions=review_data.get("suggestions", []),
                 security_concerns=review_data.get("security_concerns", []),
                 positive_feedback=review_data.get("positive_feedback", []),
-                raw_response=raw_response
+                raw_response=raw_response,
+                generated_tests=generated_tests_str,
+                dependency_warnings=dependency_warnings
             )
             
         except Exception as e:
@@ -177,6 +237,14 @@ class LLMReviewer:
                 lines.append(f"- {suggestion}")
             lines.append("")
         
+        # Dependency Warnings
+        if review.dependency_warnings:
+            lines.append("### 🔗 Dependency Impact Analysis")
+            lines.append("The following files may be affected by your changes:")
+            for warning in review.dependency_warnings:
+                lines.append(f"{warning}")
+            lines.append("")
+        
         # Positive feedback
         if review.positive_feedback:
             lines.append("### ✅ What's Good")
@@ -201,6 +269,19 @@ class LLMReviewer:
                 if issue.get('suggestion'):
                     lines.append(f"  Suggestion: {issue['suggestion']}")
             lines.append("```")
+            lines.append("")
+        
+        # Generated Tests
+        if review.generated_tests and review.generated_tests.strip() and review.generated_tests != "NO_TESTS_NEEDED":
+            lines.append("### 🧪 Generated Unit Tests")
+            lines.append("The AI has generated the following tests for your changes:")
+            lines.append("<details>")
+            lines.append("<summary>Click to expand test code</summary>")
+            lines.append("")
+            lines.append("```python")
+            lines.append(review.generated_tests)
+            lines.append("```")
+            lines.append("</details>")
             lines.append("")
         
         return "\n".join(lines)
