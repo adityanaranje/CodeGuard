@@ -13,3 +13,4 @@ class AgentState(TypedDict):
     code_review: str
     jira_ticket_description: Optional[str]
     task_description: Optional[str]
+    generated_tests: Optional[str]
