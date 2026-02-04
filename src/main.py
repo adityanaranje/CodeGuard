@@ -13,8 +13,6 @@ from typing import Optional
 
 from flask import Flask, request, jsonify, render_template
 
-from flask import Flask, request, jsonify, render_template
-
 from src.data import db
 from src.config import get_config, Config
 from src.services.github import GitHubClient, PRFile
@@ -100,6 +98,18 @@ class PRReviewBot:
         violations = self.rule_checker.check_all_rules(diffs)
         logger.info(f"  ⚠️ Found {len(violations)} rule violation(s)")
         
+        # 3.5. Generate PR description if empty
+        generated_description = None
+        if not pr_details.body or pr_details.body.strip() == "":
+            logger.info("  📝 PR body is empty. Generating description...")
+            try:
+                generated_description = self.llm_reviewer.generate_pr_description(diffs, pr_details.title)
+                logger.info("  ✅ Description generated successfully")
+                # Note: We can't update the PR via GitHub API in this flow without additional permissions
+                # So we'll include it in the review comment instead
+            except Exception as e:
+                logger.warning(f"  ⚠️ Failed to generate description: {e}")
+        
         # 4. LLM review
         logger.info("  🤖 Running LLM code review...")
         llm_review = self.llm_reviewer.review(
@@ -124,7 +134,8 @@ class PRReviewBot:
             repo_name=repo_name,
             pr_number=pr_number,
             pr_title=pr_details.title,
-            pr_author=pr_details.author
+            pr_author=pr_details.author,
+            generated_description=generated_description
         )
         
         # 7. Post to GitHub if requested
