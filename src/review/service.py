@@ -85,7 +85,8 @@ class LLMReviewer:
             raw_response = self.agent.review_pr(
                 pr_diff=diff_text, 
                 repo_path=repo_path,
-                model_name=model_to_use
+                model_name=model_to_use,
+                task_description=pr_body
             )
             
             # Clean up potential markdown JSON
