@@ -12,3 +12,4 @@ class AgentState(TypedDict):
     root_cause_analysis: str
     code_review: str
     jira_ticket_description: Optional[str]
+    task_description: Optional[str]
