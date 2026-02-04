@@ -34,6 +34,8 @@ class Agent:
         # Retrieve context if available
         retrieved_content = state.get("retrieved_content", "")
         
+        task_description = state.get("task_description", "")
+        
         system_prompt = """You are a Senior Software Architect performing a Root Cause Analysis.
         Analyze the provided PR Diff and Retrieved Code Context.
         
@@ -42,15 +44,24 @@ class Agent:
         2. Potential architectural risks or mismatches.
         3. Why existing code was modified (Root Cause).
         
-        Provide a concise analysis."""
+        CRITICAL TASK VERIFICATION:
+        The user has provided a specific task/requirement for this PR.
+        You MUST verify if the code changes align with this task.
+        Task: {task_description}
+        
+        If the code contradicts or misses the task, explicitly state this in your analysis.
+        
+        Provide a concise analysis including the task verification."""
         
         if not retrieved_content:
             context_str = "No existing code context retrieved."
         else:
             context_str = f"Related Codebase Context:\n{retrieved_content}"
             
+        final_prompt = system_prompt.format(task_description=task_description if task_description else "No specific task provided.")
+
         messages = [
-            SystemMessage(content=system_prompt),
+            SystemMessage(content=final_prompt),
             HumanMessage(content=f"PR Diff:\n{pr_diff}\n\n{context_str}")
         ]
         
@@ -102,7 +113,7 @@ class Agent:
             "messages": [response]
         }
         
-    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None) -> str:
+    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None, task_description: Optional[str] = None) -> str:
         """
         Public entry point to review a PR.
         
@@ -110,6 +121,7 @@ class Agent:
             pr_diff: The diff string of the PR.
             repo_path: Path to local repository for retrieval.
             model_name: Optional model name to use for this review.
+            task_description: Optional description of the task/requirements to verify against.
             
         Returns:
             The raw code review string (JSON content).
@@ -155,7 +167,8 @@ class Agent:
             "messages": [],
             "root_cause_analysis": "",
             "code_review": "",
-            "jira_ticket_description": None
+            "jira_ticket_description": None,
+            "task_description": task_description
         }
         
         result = app.invoke(initial_state)
