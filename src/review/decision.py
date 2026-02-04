@@ -148,7 +148,8 @@ class DecisionEngine:
         repo_name: str,
         pr_number: int,
         pr_title: str,
-        pr_author: str
+        pr_author: str,
+        generated_description: Optional[str] = None
     ) -> str:
         """
         Format the complete review as a PR comment.
@@ -172,6 +173,13 @@ class DecisionEngine:
         lines.append(f"**Pull Request:** #{pr_number} - {pr_title}")
         lines.append(f"**Author:** @{pr_author}\n")
         lines.append("---\n")
+        
+        # Generated PR Description (if applicable)
+        if generated_description:
+            lines.append("## 📝 Generated PR Description\n")
+            lines.append("> **Note:** The PR body was empty, so we generated this description for you:\n")
+            lines.append(generated_description)
+            lines.append("\n---\n")
         
         # Rule Check Results
         lines.append("## 📋 Rule Check Results\n")
