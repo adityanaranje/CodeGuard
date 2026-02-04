@@ -112,6 +112,46 @@ class Agent:
             "code_review": response.content,
             "messages": [response]
         }
+    
+    def test_generation_agent(self, state: AgentState):
+        """
+        Agent Node: Generates unit tests based on the PR diff and analysis.
+        """
+        print("--- Test Generation ---")
+        pr_diff = state.get("pr_diff", "")
+        rca = state.get("root_cause_analysis", "")
+        retrieved_content = state.get("retrieved_content", "")
+        task_description = state.get("task_description", "")
+        
+        system_prompt = """You are an Expert QA Automation Engineer.
+        Your goal is to generate robust Unit Tests (using pytest) for the code changes.
+        
+        Input Context:
+        1. PR Diff (The changes)
+        2. Root Cause Analysis (The intent)
+        3. Task Description (The requirements)
+        
+        Instructions:
+        - Write valid Python code.
+        - Use `pytest` syntax.
+        - Mock external dependencies where appropriate.
+        - Focus on testing the CHANGED logic and edge cases.
+        - Do NOT include long explanations, just the code block.
+        
+        If no code changes require tests (e.g. documentation update, configuration), return "NO_TESTS_NEEDED".
+        """
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Task: {task_description}\n\nRCA: {rca}\n\nCode Context:\n{retrieved_content}\n\nPR Diff:\n{pr_diff}")
+        ]
+        
+        response = self.model.invoke(messages)
+        
+        return {
+            "generated_tests": response.content,
+            "messages": [response]
+        }
         
     def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None, task_description: Optional[str] = None) -> str:
         """
@@ -153,10 +193,13 @@ class Agent:
         
         workflow.add_node("root_cause_analysis_agent", self.root_cause_analysis_agent)
         workflow.add_node("code_review_agent", self.code_review_agent)
+        workflow.add_node("test_generation_agent", self.test_generation_agent)
         
         workflow.set_entry_point("root_cause_analysis_agent")
         workflow.add_edge("root_cause_analysis_agent", "code_review_agent")
+        workflow.add_edge("root_cause_analysis_agent", "test_generation_agent")
         workflow.add_edge("code_review_agent", END)
+        workflow.add_edge("test_generation_agent", END)
         
         app = workflow.compile()
         
@@ -168,10 +211,18 @@ class Agent:
             "root_cause_analysis": "",
             "code_review": "",
             "jira_ticket_description": None,
-            "task_description": task_description
+            "task_description": task_description,
+            "generated_tests": ""
         }
         
         result = app.invoke(initial_state)
         
-        # Return the final code review
-        return result["code_review"]
+        # Return the final code review and generated tests (we package into a dict for the service layer)
+        # Note: The original signature returns str (code_review), but we want to pass more data.
+        # We will package it as a JSON string to maintain backward interface compatibility if needed, 
+        # OR we modify the return type. For minimal invasion, let's return a dict structure as string.
+        
+        return json.dumps({
+            "code_review": result.get("code_review", ""),
+            "generated_tests": result.get("generated_tests", "")
+        })
