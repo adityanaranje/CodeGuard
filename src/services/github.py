@@ -316,3 +316,93 @@ class GitHubClient:
             body: Review message explaining required changes.
         """
         self.post_review_comment(repo_name, pr_number, body, event="REQUEST_CHANGES")
+
+    def commit_file_change(
+        self,
+        repo_name: str,
+        branch: str,
+        file_path: str,
+        new_content: str,
+        commit_message: str
+    ) -> None:
+        """
+        Commit a file change to a specific branch.
+        
+        Args:
+            repo_name: Repository in format "owner/repo".
+            branch: Branch name to commit to.
+            file_path: Path to file in repo.
+            new_content: New file content.
+            commit_message: Commit message.
+        """
+        repo = self.get_repo(repo_name)
+        
+        try:
+            # Get the file to update (this gets the current SHA)
+            contents = repo.get_contents(file_path, ref=branch)
+            
+            # Update the file
+            repo.update_file(
+                path=file_path,
+                message=commit_message,
+                content=new_content,
+                sha=contents.sha,
+                branch=branch
+            )
+        except Exception as e:
+            # If file doesn't exist, create it
+            if "404" in str(e):
+                repo.create_file(
+                    path=file_path,
+                    message=commit_message,
+                    content=new_content,
+                    branch=branch
+                )
+            else:
+                raise
+    
+    def apply_fixes_to_pr(
+        self,
+        repo_name: str,
+        pr_number: int,
+        fixes: List[Dict[str, Any]]
+    ) -> List[str]:
+        """
+        Apply code fixes directly to the PR branch.
+        
+        Args:
+            repo_name: Repository in format "owner/repo".
+            pr_number: PR number.
+            fixes: List of fix dicts with keys:
+                - file: File path
+                - content: New file content
+                - description: Fix description
+                
+        Returns:
+            List of committed file paths.
+        """
+        pr = self.get_pr(repo_name, pr_number)
+        branch = pr.head.ref
+        committed_files = []
+        
+        for fix in fixes:
+            file_path = fix["file"]
+            new_content = fix["content"]
+            description = fix.get("description", "Auto-fix by bot")
+            
+            commit_message = f"🤖 Auto-fix: {description}\n\nFile: {file_path}\nApplied by PR Review Bot"
+            
+            try:
+                self.commit_file_change(
+                    repo_name=repo_name,
+                    branch=branch,
+                    file_path=file_path,
+                    new_content=new_content,
+                    commit_message=commit_message
+                )
+                committed_files.append(file_path)
+            except Exception as e:
+                print(f"Failed to commit {file_path}: {e}")
+        
+        return committed_files
+

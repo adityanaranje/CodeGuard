@@ -161,6 +161,12 @@ class Config:
         return int(os.getenv("PROGRESSIVE_REVIEW_THRESHOLD", "7"))
     
     @property
+    def enable_auto_fix_commits(self) -> bool:
+        """Check if bot should automatically commit fixes to PR branch."""
+        return os.getenv("ENABLE_AUTO_FIX_COMMITS", "false").lower() == "true"
+    
+    
+    @property
     def webhook_port(self) -> int:
         """Get webhook server port."""
         return int(os.getenv("WEBHOOK_PORT", "5000"))

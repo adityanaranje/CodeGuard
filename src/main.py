@@ -177,6 +177,61 @@ class PRReviewBot:
                     except Exception as e:
                         logger.warning(f"  ⚠️ Failed to post inline comments: {e}")
                 
+                # Auto-commit fixes if enabled
+                if self.config.enable_auto_fix_commits and llm_review.issues:
+                    logger.info("  🔧 Auto-commit fixes enabled. Applying fixes to PR branch...")
+                    fixes_to_apply = []
+                    total_fix_lines = 0
+                    
+                    for issue in llm_review.issues:
+                        if issue.get('fixed_code') and issue.get('file'):
+                            # Count lines in the fix
+                            fix_line_count = len(issue['fixed_code'].split('\n'))
+                            total_fix_lines += fix_line_count
+                            
+                            # Get current file content
+                            try:
+                                current_content = self.github_client.get_file_content(
+                                    repo_name=repo_name,
+                                    file_path=issue['file'],
+                                    ref=pr_details.head_branch
+                                )
+                                
+                                # Apply the fix (simple replacement for now)
+                                # TODO: More sophisticated patching logic
+                                fixes_to_apply.append({
+                                    "file": issue['file'],
+                                    "content": issue['fixed_code'],
+                                    "description": issue.get('description', 'Auto-fix')
+                                })
+                            except Exception as e:
+                                logger.warning(f"  ⚠️ Could not prepare fix for {issue['file']}: {e}")
+                    
+                    # Safety check: Don't auto-commit if changes are too large
+                    if total_fix_lines > 100:
+                        logger.warning(f"  ⚠️ Auto-commit skipped: Changes too large ({total_fix_lines} lines > 100 line limit)")
+                        logger.info("  💡 Fixes are available in inline comments for manual review")
+                    elif fixes_to_apply:
+                        try:
+                            committed_files = self.github_client.apply_fixes_to_pr(
+                                repo_name=repo_name,
+                                pr_number=pr_number,
+                                fixes=fixes_to_apply
+                            )
+                            logger.info(f"  ✅ Auto-committed fixes to {len(committed_files)} file(s) ({total_fix_lines} lines)")
+                            
+                            # Post comment about auto-fixes
+                            fix_comment = f"🤖 **Auto-fixes applied!**\n\nI've automatically committed fixes to the following files:\n"
+                            for file in committed_files:
+                                fix_comment += f"- `{file}`\n"
+                            fix_comment += f"\n**Total changes:** {total_fix_lines} lines\n"
+                            fix_comment += "\nPlease review the changes and let me know if you need any adjustments!"
+                            
+                            self.github_client.post_issue_comment(repo_name, pr_number, fix_comment)
+                        except Exception as e:
+                            logger.error(f"  ❌ Failed to auto-commit fixes: {e}")
+                
+                
             except Exception as e:
                 logger.error(f"  ❌ Failed to post review: {e}")
         
