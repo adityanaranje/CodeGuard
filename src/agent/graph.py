@@ -93,12 +93,21 @@ class Agent:
             "summary": "...",
             "severity_score": int (1-10),
             "issues": [
-                {"type": "bug|security|style", "file": "...", "line": int, "description": "...", "suggestion": "..."}
+                {
+                    "type": "bug|security|style", 
+                    "file": "...", 
+                    "line": int, 
+                    "description": "...", 
+                    "suggestion": "...",
+                    "fixed_code": "actual corrected code snippet that can be directly replaced"
+                }
             ],
             "suggestions": ["..."],
             "security_concerns": ["..."],
             "positive_feedback": ["..."]
         }
+        
+        IMPORTANT: For each issue, provide the 'fixed_code' field with the actual corrected code that can replace the problematic code.
         """
         
         messages = [
@@ -174,7 +183,7 @@ class Agent:
             "messages": [response]
         }
         
-    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None, task_description: Optional[str] = None, primary_language: Optional[str] = None) -> str:
+    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None, task_description: Optional[str] = None, primary_language: Optional[str] = None, skip_test_generation: bool = False) -> str:
         """
         Public entry point to review a PR.
         
@@ -184,6 +193,7 @@ class Agent:
             model_name: Optional model name to use for this review.
             task_description: Optional description of the task/requirements to verify against.
             primary_language: Primary programming language detected from the PR.
+            skip_test_generation: If True, skip test generation even if enabled.
             
         Returns:
             The raw code review string (JSON content).
@@ -215,13 +225,22 @@ class Agent:
         
         workflow.add_node("root_cause_analysis_agent", self.root_cause_analysis_agent)
         workflow.add_node("code_review_agent", self.code_review_agent)
-        workflow.add_node("test_generation_agent", self.test_generation_agent)
+        
+        # Phase 2: Conditional test generation
+        # Only add test generation node if enabled in config AND not skipped for this PR
+        should_generate_tests = self.config.enable_test_generation and not skip_test_generation
+        if should_generate_tests:
+            workflow.add_node("test_generation_agent", self.test_generation_agent)
         
         workflow.set_entry_point("root_cause_analysis_agent")
         workflow.add_edge("root_cause_analysis_agent", "code_review_agent")
-        workflow.add_edge("root_cause_analysis_agent", "test_generation_agent")
+        
+        # Only enable test generation path if configured
+        if should_generate_tests:
+            workflow.add_edge("root_cause_analysis_agent", "test_generation_agent")
+            workflow.add_edge("test_generation_agent", END)
+        
         workflow.add_edge("code_review_agent", END)
-        workflow.add_edge("test_generation_agent", END)
         
         app = workflow.compile()
         

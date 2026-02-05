@@ -160,6 +160,23 @@ class PRReviewBot:
                     context="PR Review Bot"
                 )
                 logger.info("  ✅ Review posted successfully!")
+                
+                # Post inline comments if there are any issues with file/line info
+                inline_comments = self.llm_reviewer.get_inline_comments(llm_review)
+                if inline_comments:
+                    logger.info(f"  💬 Posting {len(inline_comments)} inline comment(s)...")
+                    try:
+                        self.github_client.post_inline_comments(
+                            repo_name=repo_name,
+                            pr_number=pr_number,
+                            comments=inline_comments,
+                            body="Code suggestions with fixes",
+                            event="COMMENT"
+                        )
+                        logger.info("  ✅ Inline comments posted successfully!")
+                    except Exception as e:
+                        logger.warning(f"  ⚠️ Failed to post inline comments: {e}")
+                
             except Exception as e:
                 logger.error(f"  ❌ Failed to post review: {e}")
         

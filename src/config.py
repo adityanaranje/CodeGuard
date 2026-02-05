@@ -126,9 +126,39 @@ class Config:
         return int(os.getenv("LLM_TOKEN_LIMIT", "4000"))
 
     @property
+    def max_file_size_kb(self) -> int:
+        """Get maximum file size in KB to include in review."""
+        return int(os.getenv("MAX_FILE_SIZE_KB", "100"))
+
+    @property
+    def skip_auto_generated(self) -> bool:
+        """Check if auto-generated files should be skipped."""
+        return os.getenv("SKIP_AUTO_GENERATED", "true").lower() == "true"
+
+    @property
+    def enable_test_generation(self) -> bool:
+        """Check if test generation is enabled."""
+        return os.getenv("ENABLE_TEST_GENERATION", "true").lower() == "true"
+
+    @property
+    def test_generation_min_lines(self) -> int:
+        """Get minimum lines needed to generate tests."""
+        return int(os.getenv("TEST_GENERATION_MIN_LINES", "50"))
+
+    @property
     def enable_rag(self) -> bool:
         """Check if RAG (Deep Context) is enabled."""
         return os.getenv("ENABLE_RAG", "false").lower() == "true"
+
+    @property
+    def enable_progressive_review(self) -> bool:
+        """Check if progressive review strategy is enabled."""
+        return os.getenv("ENABLE_PROGRESSIVE_REVIEW", "true").lower() == "true"
+
+    @property
+    def progressive_review_threshold(self) -> int:
+        """Get severity threshold for escalating to large model."""
+        return int(os.getenv("PROGRESSIVE_REVIEW_THRESHOLD", "7"))
     
     @property
     def webhook_port(self) -> int:

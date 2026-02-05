@@ -184,6 +184,60 @@ class GitHubClient:
         pr = self.get_pr(repo_name, pr_number)
         pr.create_review(body=body, event=event)
     
+    def post_inline_comments(
+        self,
+        repo_name: str,
+        pr_number: int,
+        comments: List[Dict[str, Any]],
+        body: Optional[str] = None,
+        event: str = "COMMENT"
+    ) -> None:
+        """
+        Post inline comments on specific lines in PR files (appears in Files changed tab).
+        
+        Args:
+            repo_name: Repository in format "owner/repo".
+            pr_number: PR number.
+            comments: List of comment dicts with keys:
+                - path: File path (required)
+                - line: Line number in the new file (required)
+                - body: Comment text (required)
+                - side: "RIGHT" for new code (default), "LEFT" for old code
+            body: Optional overall review comment.
+            event: Review event type (COMMENT, APPROVE, REQUEST_CHANGES).
+            
+        Example:
+            comments = [
+                {
+                    "path": "src/app.js",
+                    "line": 45,
+                    "body": "🔧 **Fixed Code:**\n```javascript\nif (user && user.name) {\n  console.log(user.name);\n}\n```"
+                }
+            ]
+        """
+        pr = self.get_pr(repo_name, pr_number)
+        
+        # Format comments for GitHub API
+        review_comments = []
+        for comment in comments:
+            review_comment = {
+                "path": comment["path"],
+                "line": comment["line"],
+                "body": comment["body"]
+            }
+            if "side" in comment:
+                review_comment["side"] = comment["side"]
+            
+            review_comments.append(review_comment)
+        
+        # Create review with inline comments
+        pr.create_review(
+            body=body or "Code review with inline suggestions",
+            event=event,
+            comments=review_comments
+        )
+    
+    
     def post_issue_comment(
         self,
         repo_name: str,

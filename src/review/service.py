@@ -42,6 +42,10 @@ class LLMReviewer:
         # Initialize the LangGraph Agent
         self.agent = Agent(config) 
         self.diff_parser = DiffParser()
+        
+        # Phase 4: Initialize cache
+        from src.services.cache import ReviewCache
+        self.cache = ReviewCache()
     
     def generate_pr_description(self, diffs: List[FileDiff], pr_title: str) -> str:
         """
@@ -84,6 +88,75 @@ class LLMReviewer:
         response = model.invoke(messages)
         return response.content
     
+    def _is_auto_generated(self, filename: str) -> bool:
+        """Check if file is auto-generated and should be skipped."""
+        auto_generated_patterns = [
+            'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+            'Gemfile.lock', 'Cargo.lock', 'composer.lock',
+            '.min.js', '.min.css',
+            'dist/', 'build/', 'node_modules/',
+            '.pyc', '__pycache__/',
+            'go.sum'
+        ]
+        
+        filename_lower = filename.lower()
+        return any(pattern in filename_lower for pattern in auto_generated_patterns)
+    
+    def _is_excluded_file(self, filename: str) -> bool:
+        """Check if file should be excluded (images, videos, fonts, binaries)."""
+        excluded_extensions = {
+            # Images
+            'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp', 'bmp',
+            # Videos
+            'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm',
+            # Audio
+            'mp3', 'wav', 'ogg', 'flac',
+            # Fonts
+            'ttf', 'otf', 'woff', 'woff2', 'eot',
+            # Binaries
+            'exe', 'dll', 'so', 'dylib', 'bin',
+            # Archives
+            'zip', 'tar', 'gz', 'rar', '7z',
+            # Documents
+            'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'
+        }
+        
+        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+        return ext in excluded_extensions
+    
+    def _is_trivial_change(self, diffs: List[FileDiff]) -> bool:
+        """Check if PR contains only trivial changes (whitespace, version bumps)."""
+        # Version-only changes
+        if len(diffs) == 1:
+            filename = diffs[0].filename.lower()
+            if filename in ['package.json', 'pyproject.toml', 'cargo.toml', 'pom.xml']:
+                total_changes = diffs[0].additions + diffs[0].deletions
+                if total_changes <= 2:  # Likely just version bump
+                    return True
+        
+        # Check if all changes are whitespace only
+        all_whitespace = True
+        for diff in diffs:
+            for line_num, content in diff.added_lines:
+                if content.strip():  # Non-whitespace content
+                    all_whitespace = False
+                    break
+            if not all_whitespace:
+                break
+        
+        return all_whitespace
+    
+    def _is_documentation_only(self, diffs: List[FileDiff]) -> bool:
+        """Check if PR contains only documentation changes."""
+        doc_extensions = {'md', 'txt', 'rst', 'adoc', 'pdf'}
+        
+        for diff in diffs:
+            ext = diff.filename.rsplit('.', 1)[-1].lower() if '.' in diff.filename else ''
+            if ext not in doc_extensions:
+                return False
+        
+        return len(diffs) > 0
+    
     def review(
         self,
         diffs: List[FileDiff],
@@ -93,8 +166,31 @@ class LLMReviewer:
         """
         Review code changes using Agent.
         """
+        # Early return for trivial PRs (Phase 3)
+        if self._is_trivial_change(diffs):
+            print("Skipping review: Trivial changes detected (version bump or whitespace only)")
+            return LLMReview(
+                summary="Trivial changes detected. No review needed.",
+                severity_score=1,
+                issues=[],
+                suggestions=[],
+                security_concerns=[],
+                positive_feedback=["Changes appear to be trivial (version bump or formatting)."],
+                raw_response="",
+                generated_tests=None
+            )
+        
         # Filter out non-code files
         code_diffs = [d for d in diffs if self._is_code_file(d.filename)]
+        
+        # Phase 1: Apply smart filtering
+        if self.config.skip_auto_generated:
+            code_diffs = [d for d in code_diffs if not self._is_auto_generated(d.filename)]
+            code_diffs = [d for d in code_diffs if not self._is_excluded_file(d.filename)]
+        
+        # Filter by file size
+        max_size_bytes = self.config.max_file_size_kb * 1024
+        code_diffs = [d for d in code_diffs if len(d.full_diff_text) <= max_size_bytes]
         
         if not code_diffs:
             return LLMReview(
@@ -120,46 +216,86 @@ class LLMReviewer:
         # Format the diff for the agent
         diff_text = self.diff_parser.format_for_review(code_diffs, max_lines=1000)
         
+        # Phase 4: Check cache before making LLM call
+        diff_hash = self.cache.hash_diff(diff_text)
+        cached_review = self.cache.get(diff_hash)
+        
+        if cached_review:
+            print(f"Cache hit! Returning cached review (hash: {diff_hash[:8]}...)")
+            return LLMReview(
+                summary=cached_review.get("summary", ""),
+                severity_score=cached_review.get("severity_score", 5),
+                issues=cached_review.get("issues", []),
+                suggestions=cached_review.get("suggestions", []),
+                security_concerns=cached_review.get("security_concerns", []),
+                positive_feedback=cached_review.get("positive_feedback", []),
+                raw_response=cached_review.get("raw_response", ""),
+                generated_tests=cached_review.get("generated_tests"),
+                dependency_warnings=cached_review.get("dependency_warnings", []),
+                primary_language=cached_review.get("primary_language")
+            )
+        
+        print(f"Cache miss. Proceeding with LLM review (hash: {diff_hash[:8]}...)")
+        
         # Use '.' as repo path for now (current working directory)
         # In a real deployment, we might need a more dynamic path if processing multiple repos locally
         repo_path = "."
         
         try:
-            # 5. Determine which Groq model to use based on PR size
-            # 5. Determine which Groq model to use based on PR size and complexity
-            total_lines = sum(d.additions + d.deletions for d in code_diffs)
-            total_files = len(code_diffs)
-            # Estimate tokens: approx 4 chars per token.
-            total_tokens = sum(len(d.full_diff_text) for d in code_diffs) // 4
-            
-            use_large_model = False
-            reasons = []
-
-            # Check thresholds
-            if total_lines > self.config.llm_change_threshold:
-                use_large_model = True
-                reasons.append(f"Lines ({total_lines} > {self.config.llm_change_threshold})")
-            
-            if total_files > self.config.llm_file_limit:
-                use_large_model = True
-                reasons.append(f"Files ({total_files} > {self.config.llm_file_limit})")
-
-            if total_tokens > self.config.llm_token_limit:
-                use_large_model = True
-                reasons.append(f"Tokens (~{total_tokens} > {self.config.llm_token_limit})")
-
-            if use_large_model:
-                model_to_use = self.config.groq_large_model
-                print(f"Large PR detected. Using powerful model: {model_to_use}")
-                print(f"   Reason: {', '.join(reasons)}")
-            else:
+            # Phase 5: Progressive Review Strategy
+            # Start with small model, escalate to large only if needed
+            if self.config.enable_progressive_review:
+                # Always start with small model
                 model_to_use = self.config.groq_small_model
-                print(f"Small PR detected. Using fast model: {model_to_use}")
+                print(f"Progressive review: Starting with small model: {model_to_use}")
                 print(f"   Stats: {total_lines} lines, {total_files} files, ~{total_tokens} tokens")
+            else:
+                # Original logic: Choose model based on PR size
+                total_lines = sum(d.additions + d.deletions for d in code_diffs)
+                total_files = len(code_diffs)
+                total_tokens = sum(len(d.full_diff_text) for d in code_diffs) // 4
+                
+                use_large_model = False
+                reasons = []
+
+                # Check thresholds
+                if total_lines > self.config.llm_change_threshold:
+                    use_large_model = True
+                    reasons.append(f"Lines ({total_lines} > {self.config.llm_change_threshold})")
+                
+                if total_files > self.config.llm_file_limit:
+                    use_large_model = True
+                    reasons.append(f"Files ({total_files} > {self.config.llm_file_limit})")
+
+                if total_tokens > self.config.llm_token_limit:
+                    use_large_model = True
+                    reasons.append(f"Tokens (~{total_tokens} > {self.config.llm_token_limit})")
+
+                if use_large_model:
+                    model_to_use = self.config.groq_large_model
+                    print(f"Large PR detected. Using powerful model: {model_to_use}")
+                    print(f"   Reason: {', '.join(reasons)}")
+                else:
+                    model_to_use = self.config.groq_small_model
+                    print(f"Small PR detected. Using fast model: {model_to_use}")
+                    print(f"   Stats: {total_lines} lines, {total_files} files, ~{total_tokens} tokens")
 
             # Detect primary language for test generation
             primary_language = self._detect_primary_language(code_diffs)
             print(f"Detected primary language: {primary_language}")
+            
+            # Phase 2: Determine if we should generate tests
+            should_generate_tests = self.config.enable_test_generation
+            if should_generate_tests:
+                # Skip tests for documentation-only PRs
+                if self._is_documentation_only(code_diffs):
+                    should_generate_tests = False
+                    print("Skipping test generation: Documentation-only PR")
+                
+                # Skip tests for small PRs
+                elif total_lines < self.config.test_generation_min_lines:
+                    should_generate_tests = False
+                    print(f"Skipping test generation: PR too small ({total_lines} < {self.config.test_generation_min_lines} lines)")
 
             # Call Agent Orchestrator
             raw_response = self.agent.review_pr(
@@ -167,7 +303,8 @@ class LLMReviewer:
                 repo_path=repo_path,
                 model_name=model_to_use,
                 task_description=pr_body,
-                primary_language=primary_language
+                primary_language=primary_language,
+                skip_test_generation=not should_generate_tests
             )
             
             # Parse the response (now returns JSON with code_review and generated_tests)
@@ -183,6 +320,55 @@ class LLMReviewer:
                  clean_response = clean_response.split("```")[1].strip()
 
             review_data = json.loads(clean_response)
+            severity_score = min(10, max(1, review_data.get("severity_score", 5)))
+            
+            # Phase 5: Check if we need to escalate to large model
+            if (self.config.enable_progressive_review and 
+                model_to_use == self.config.groq_small_model and 
+                severity_score > self.config.progressive_review_threshold):
+                
+                print(f"Escalating to large model: Severity {severity_score} > threshold {self.config.progressive_review_threshold}")
+                
+                # Re-run with large model
+                raw_response = self.agent.review_pr(
+                    pr_diff=diff_text, 
+                    repo_path=repo_path,
+                    model_name=self.config.groq_large_model,
+                    task_description=pr_body,
+                    primary_language=primary_language,
+                    skip_test_generation=not should_generate_tests
+                )
+                
+                # Re-parse with large model results
+                agent_result = json.loads(raw_response)
+                code_review_str = agent_result.get("code_review", "")
+                generated_tests_str = agent_result.get("generated_tests", "")
+                
+                clean_response = code_review_str
+                if "```json" in clean_response:
+                    clean_response = clean_response.split("```json")[1].split("```")[0].strip()
+                elif "```" in clean_response:
+                    clean_response = clean_response.split("```")[1].strip()
+                
+                review_data = json.loads(clean_response)
+                severity_score = min(10, max(1, review_data.get("severity_score", 5)))
+                print(f"Large model review complete. Final severity: {severity_score}")
+            
+            # Phase 4: Store review in cache for future use
+            cache_data = {
+                "summary": review_data.get("summary", "Review completed."),
+                "severity_score": severity_score,
+                "issues": review_data.get("issues", []),
+                "suggestions": review_data.get("suggestions", []),
+                "security_concerns": review_data.get("security_concerns", []),
+                "positive_feedback": review_data.get("positive_feedback", []),
+                "raw_response": raw_response,
+                "generated_tests": generated_tests_str,
+                "dependency_warnings": dependency_warnings,
+                "primary_language": primary_language
+            }
+            self.cache.set(diff_hash, cache_data)
+            print(f"Review cached (hash: {diff_hash[:8]}...)")
             
             return LLMReview(
                 summary=review_data.get("summary", "Review completed."),
@@ -299,24 +485,28 @@ class LLMReviewer:
                 lines.append(f"- {feedback}")
             lines.append("")
 
-        # AI Fix Prompt
+        # Fixed Code (instead of AI Fix Prompt)
         if review.issues:
-            lines.append("### 🛠️ AI Fix Prompt")
-            lines.append("Use this prompt with your preferred AI assistant to fix the identified issues:")
-            lines.append("```text")
-            lines.append("I have the following code issues identified in a PR review. Please provide the corrected code based on these findings.")
-            lines.append("")
-            lines.append("Issues:")
-            for issue in review.issues:
-                file_info = f" in {issue.get('file', 'unknown')}"
-                if issue.get('line'):
-                    file_info += f":{issue['line']}"
+            has_fixes = any(issue.get('fixed_code') for issue in review.issues)
+            if has_fixes:
+                lines.append("### 🔧 Fixed Code")
+                lines.append("Here are the corrected code snippets for the identified issues:")
+                lines.append("")
                 
-                lines.append(f"- {issue.get('type', 'issue').title()}{file_info}: {issue.get('description', '')}")
-                if issue.get('suggestion'):
-                    lines.append(f"  Suggestion: {issue['suggestion']}")
-            lines.append("```")
-            lines.append("")
+                for i, issue in enumerate(review.issues, 1):
+                    if issue.get('fixed_code'):
+                        file_info = issue.get('file', 'unknown')
+                        if issue.get('line'):
+                            file_info += f":{issue['line']}"
+                        
+                        lines.append(f"**Issue {i}**: {issue.get('description', '')}")
+                        lines.append(f"*File: {file_info}*")
+                        lines.append("")
+                        lines.append("```" + (review.primary_language or "python"))
+                        lines.append(issue['fixed_code'].strip())
+                        lines.append("```")
+                        lines.append("")
+        
         
         # Generated Tests
         if review.generated_tests and review.generated_tests.strip() and review.generated_tests != "NO_TESTS_NEEDED":
@@ -339,5 +529,41 @@ class LLMReviewer:
 
         
         return "\n".join(lines)
+    
+    def get_inline_comments(self, review: LLMReview) -> List[Dict[str, Any]]:
+        """
+        Convert LLM review issues into inline comment format for GitHub.
+        
+        Args:
+            review: LLM review object with issues.
+            
+        Returns:
+            List of inline comment dicts ready for GitHub API.
+        """
+        comments = []
+        
+        for issue in review.issues:
+            # Only create inline comment if we have file and line info
+            if not issue.get('file') or not issue.get('line'):
+                continue
+            
+            # Build comment body with fixed code if available
+            body_parts = [f"**{issue.get('type', 'Issue').title()}**: {issue.get('description', '')}"]
+            
+            if issue.get('suggestion'):
+                body_parts.append(f"\n💡 *Suggestion:* {issue['suggestion']}")
+            
+            if issue.get('fixed_code'):
+                language = review.primary_language or "python"
+                body_parts.append(f"\n\n🔧 **Fixed Code:**\n```{language}\n{issue['fixed_code'].strip()}\n```")
+            
+            comments.append({
+                "path": issue['file'],
+                "line": issue['line'],
+                "body": "\n".join(body_parts)
+            })
+        
+        return comments
+
 
 
