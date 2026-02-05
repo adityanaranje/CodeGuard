@@ -281,12 +281,14 @@ class LLMReviewer:
                 "<summary>Click to expand test code</summary>",
                 "",
                 "```python",
-                review.generated_tests,
+                review.generated_tests.rstrip().replace("```", "``\\`"),
                 "```",
                 "",
                 "</details>",
+                "",
             ])
 
         
         return "\n".join(lines)
+
 
