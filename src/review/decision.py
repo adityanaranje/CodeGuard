@@ -236,6 +236,19 @@ class DecisionEngine:
         else:
             lines.append("> ✅ **This PR is approved for merging.**\n")
         
+        # Add action buttons
+        lines.append("### 🎯 Quick Actions\n")
+        lines.append("**Maintainers:** Use these buttons to take action on this PR:\n")
+        lines.append("")
+        lines.append("| Action | Command |")
+        lines.append("|--------|---------|")
+        lines.append("| ✅ Approve & Merge | `/approve` |")
+        lines.append("| ❌ Reject PR | `/reject` |")
+        lines.append("| 🔄 Request Changes | `/request-changes` |")
+        lines.append("| 💬 Comment Only | Reply normally |")
+        lines.append("")
+        lines.append("*Note: These commands can be used in a comment to trigger the corresponding action.*\n")
+        
         lines.append("---\n")
         lines.append("<sub>🤖 Automated review by GitHub PR Review Bot | Powered by Groq LLM</sub>")
         

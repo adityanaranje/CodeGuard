@@ -231,7 +231,58 @@ def webhook_handler():
     if not payload:
         return jsonify({"error": "Invalid JSON payload"}), 400
 
-    # Only handle pull_request events
+    # Handle issue_comment events for slash commands
+    if event_type == "issue_comment":
+        action = payload.get("action", "")
+        if action == "created":
+            comment_body = payload.get("comment", {}).get("body", "").strip().lower()
+            issue = payload.get("issue", {})
+            
+            # Check if it's a PR (issues and PRs share the same API)
+            if "pull_request" in issue:
+                pr_number = issue.get("number")
+                repo = payload.get("repository", {})
+                repo_name = repo.get("full_name")
+                installation = payload.get("installation", {})
+                installation_id = installation.get("id")
+                commenter = payload.get("comment", {}).get("user", {}).get("login", "")
+                
+                logger.info(f"Comment from {commenter} on PR #{pr_number}: {comment_body}")
+                
+                # Process slash commands
+                if comment_body.startswith("/approve"):
+                    logger.info(f"Approving PR #{pr_number}...")
+                    try:
+                        bot = PRReviewBot(config, installation_id=installation_id)
+                        bot.github_client.approve_pr(repo_name, pr_number, "✅ Approved by maintainer command")
+                        return jsonify({"message": "PR approved"}), 200
+                    except Exception as e:
+                        logger.error(f"Failed to approve: {e}")
+                        return jsonify({"error": str(e)}), 500
+                
+                elif comment_body.startswith("/reject"):
+                    logger.info(f"Rejecting PR #{pr_number}...")
+                    try:
+                        bot = PRReviewBot(config, installation_id=installation_id)
+                        bot.github_client.request_changes(repo_name, pr_number, "❌ Changes requested by maintainer command")
+                        return jsonify({"message": "PR rejected"}), 200
+                    except Exception as e:
+                        logger.error(f"Failed to reject: {e}")
+                        return jsonify({"error": str(e)}), 500
+                
+                elif comment_body.startswith("/request-changes"):
+                    logger.info(f"Requesting changes on PR #{pr_number}...")
+                    try:
+                        bot = PRReviewBot(config, installation_id=installation_id)
+                        bot.github_client.request_changes(repo_name, pr_number, "🔄 Changes requested by maintainer command")
+                        return jsonify({"message": "Changes requested"}), 200
+                    except Exception as e:
+                        logger.error(f"Failed to request changes: {e}")
+                        return jsonify({"error": str(e)}), 500
+        
+        return jsonify({"message": "Comment processed"}), 200
+
+    # Only handle pull_request events for reviews
     if event_type != "pull_request":
         logger.info(f"Ignoring event: {event_type}")
         return jsonify({"message": f"Ignoring event: {event_type}"}), 200

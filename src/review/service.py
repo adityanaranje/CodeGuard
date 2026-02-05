@@ -242,6 +242,11 @@ class LLMReviewer:
         repo_path = "."
         
         try:
+            # Calculate PR stats (needed for both progressive and original logic)
+            total_lines = sum(d.additions + d.deletions for d in code_diffs)
+            total_files = len(code_diffs)
+            total_tokens = sum(len(d.full_diff_text) for d in code_diffs) // 4
+            
             # Phase 5: Progressive Review Strategy
             # Start with small model, escalate to large only if needed
             if self.config.enable_progressive_review:
@@ -251,10 +256,6 @@ class LLMReviewer:
                 print(f"   Stats: {total_lines} lines, {total_files} files, ~{total_tokens} tokens")
             else:
                 # Original logic: Choose model based on PR size
-                total_lines = sum(d.additions + d.deletions for d in code_diffs)
-                total_files = len(code_diffs)
-                total_tokens = sum(len(d.full_diff_text) for d in code_diffs) // 4
-                
                 use_large_model = False
                 reasons = []
 
