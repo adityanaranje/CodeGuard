@@ -273,15 +273,20 @@ class LLMReviewer:
         
         # Generated Tests
         if review.generated_tests and review.generated_tests.strip() and review.generated_tests != "NO_TESTS_NEEDED":
-            lines.append("### 🧪 Generated Unit Tests")
-            lines.append("The AI has generated the following tests for your changes:")
-            lines.append("<details>")
-            lines.append("<summary>Click to expand test code</summary>")
-            lines.append("")
-            lines.append("```python")
-            lines.append(review.generated_tests)
-            lines.append("```")
-            lines.append("</details>")
-            lines.append("")
+            lines.extend([
+                "### 🧪 Generated Unit Tests",
+                "The AI has generated the following tests for your changes:",
+                "",
+                "<details>",
+                "<summary>Click to expand test code</summary>",
+                "",
+                "```python",
+                review.generated_tests,
+                "```",
+                "",
+                "</details>",
+            ])
+
         
         return "\n".join(lines)
+
