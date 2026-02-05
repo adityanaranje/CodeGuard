@@ -122,21 +122,42 @@ class Agent:
         rca = state.get("root_cause_analysis", "")
         retrieved_content = state.get("retrieved_content", "")
         task_description = state.get("task_description", "")
+        primary_language = state.get("primary_language", "python")
         
-        system_prompt = """You are an Expert QA Automation Engineer.
-        Your goal is to generate robust Unit Tests (using pytest) for the code changes.
+        # Map languages to test frameworks
+        test_frameworks = {
+            "python": {"name": "pytest", "example": "pytest"},
+            "javascript": {"name": "Jest", "example": "jest"},
+            "typescript": {"name": "Jest", "example": "jest"},
+            "java": {"name": "JUnit", "example": "JUnit 5"},
+            "go": {"name": "testing package", "example": "go test"},
+            "rust": {"name": "cargo test", "example": "cargo test"},
+            "ruby": {"name": "RSpec", "example": "RSpec"},
+            "php": {"name": "PHPUnit", "example": "PHPUnit"},
+            "csharp": {"name": "xUnit", "example": "xUnit"},
+            "kotlin": {"name": "JUnit", "example": "JUnit 5"},
+            "swift": {"name": "XCTest", "example": "XCTest"},
+            "scala": {"name": "ScalaTest", "example": "ScalaTest"},
+        }
+        
+        framework = test_frameworks.get(primary_language, {"name": "pytest", "example": "pytest"})
+        
+        system_prompt = f"""You are an Expert QA Automation Engineer.
+        Your goal is to generate robust Unit Tests for the code changes.
         
         Input Context:
         1. PR Diff (The changes)
         2. Root Cause Analysis (The intent)
         3. Task Description (The requirements)
+        4. Language: {primary_language}
         
         Instructions:
-        - Write valid Python code.
-        - Use `pytest` syntax.
+        - Write valid {primary_language} code.
+        - Use `{framework['name']}` syntax for testing.
         - Mock external dependencies where appropriate.
         - Focus on testing the CHANGED logic and edge cases.
         - Do NOT include long explanations, just the code block.
+        - Return ONLY the test code without markdown formatting.
         
         If no code changes require tests (e.g. documentation update, configuration), return "NO_TESTS_NEEDED".
         """
@@ -153,7 +174,7 @@ class Agent:
             "messages": [response]
         }
         
-    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None, task_description: Optional[str] = None) -> str:
+    def review_pr(self, pr_diff: str, repo_path: str, model_name: Optional[str] = None, task_description: Optional[str] = None, primary_language: Optional[str] = None) -> str:
         """
         Public entry point to review a PR.
         
@@ -162,6 +183,7 @@ class Agent:
             repo_path: Path to local repository for retrieval.
             model_name: Optional model name to use for this review.
             task_description: Optional description of the task/requirements to verify against.
+            primary_language: Primary programming language detected from the PR.
             
         Returns:
             The raw code review string (JSON content).
@@ -212,7 +234,8 @@ class Agent:
             "code_review": "",
             "jira_ticket_description": None,
             "task_description": task_description,
-            "generated_tests": ""
+            "generated_tests": "",
+            "primary_language": primary_language or "python"
         }
         
         result = app.invoke(initial_state)

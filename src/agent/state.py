@@ -14,3 +14,4 @@ class AgentState(TypedDict):
     jira_ticket_description: Optional[str]
     task_description: Optional[str]
     generated_tests: Optional[str]
+    primary_language: Optional[str]

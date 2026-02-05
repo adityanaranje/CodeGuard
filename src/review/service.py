@@ -25,6 +25,7 @@ class LLMReview:
     raw_response: str
     generated_tests: Optional[str] = None
     dependency_warnings: List[str] = None
+    primary_language: Optional[str] = None
 
 
 class LLMReviewer:
@@ -125,21 +126,48 @@ class LLMReviewer:
         
         try:
             # 5. Determine which Groq model to use based on PR size
-            total_changes = sum(d.additions + d.deletions for d in code_diffs)
-            model_to_use = self.config.groq_large_model
+            # 5. Determine which Groq model to use based on PR size and complexity
+            total_lines = sum(d.additions + d.deletions for d in code_diffs)
+            total_files = len(code_diffs)
+            # Estimate tokens: approx 4 chars per token.
+            total_tokens = sum(len(d.full_diff_text) for d in code_diffs) // 4
             
-            if total_changes < self.config.llm_change_threshold:
-                model_to_use = self.config.groq_small_model
-                print(f"⚡ Small PR detected ({total_changes} lines). Using fast model: {model_to_use}")
+            use_large_model = False
+            reasons = []
+
+            # Check thresholds
+            if total_lines > self.config.llm_change_threshold:
+                use_large_model = True
+                reasons.append(f"Lines ({total_lines} > {self.config.llm_change_threshold})")
+            
+            if total_files > self.config.llm_file_limit:
+                use_large_model = True
+                reasons.append(f"Files ({total_files} > {self.config.llm_file_limit})")
+
+            if total_tokens > self.config.llm_token_limit:
+                use_large_model = True
+                reasons.append(f"Tokens (~{total_tokens} > {self.config.llm_token_limit})")
+
+            if use_large_model:
+                model_to_use = self.config.groq_large_model
+                print(f"Large PR detected. Using powerful model: {model_to_use}")
+                print(f"   Reason: {', '.join(reasons)}")
             else:
-                print(f"🧠 Large PR detected ({total_changes} lines). Using powerful model: {model_to_use}")
+                model_to_use = self.config.groq_small_model
+                print(f"Small PR detected. Using fast model: {model_to_use}")
+                print(f"   Stats: {total_lines} lines, {total_files} files, ~{total_tokens} tokens")
+
+            # Detect primary language for test generation
+            primary_language = self._detect_primary_language(code_diffs)
+            print(f"Detected primary language: {primary_language}")
 
             # Call Agent Orchestrator
             raw_response = self.agent.review_pr(
                 pr_diff=diff_text, 
                 repo_path=repo_path,
                 model_name=model_to_use,
-                task_description=pr_body
+                task_description=pr_body,
+                primary_language=primary_language
             )
             
             # Parse the response (now returns JSON with code_review and generated_tests)
@@ -165,7 +193,8 @@ class LLMReviewer:
                 positive_feedback=review_data.get("positive_feedback", []),
                 raw_response=raw_response,
                 generated_tests=generated_tests_str,
-                dependency_warnings=dependency_warnings
+                dependency_warnings=dependency_warnings,
+                primary_language=primary_language
             )
             
         except Exception as e:
@@ -178,6 +207,24 @@ class LLMReviewer:
                 positive_feedback=[],
                 raw_response=""
             )
+    
+    def _detect_primary_language(self, diffs: List[FileDiff]) -> str:
+        """
+        Detect the primary programming language from the diffs.
+        Returns the most common language across all changed files.
+        """
+        language_counts = {}
+        
+        for diff in diffs:
+            lang = self.diff_parser.get_language(diff.filename)
+            if lang != "unknown":
+                language_counts[lang] = language_counts.get(lang, 0) + 1
+        
+        if not language_counts:
+            return "python"  # Default fallback
+        
+        # Return most common language
+        return max(language_counts, key=language_counts.get)
     
     def _is_code_file(self, filename: str) -> bool:
         """Check if a file is a code file worth reviewing."""
@@ -273,6 +320,8 @@ class LLMReviewer:
         
         # Generated Tests
         if review.generated_tests and review.generated_tests.strip() and review.generated_tests != "NO_TESTS_NEEDED":
+            # Determine language for code fence
+            test_language = review.primary_language or "python"
             lines.extend([
                 "### 🧪 Generated Unit Tests",
                 "The AI has generated the following tests for your changes:",
@@ -280,7 +329,7 @@ class LLMReviewer:
                 "<details>",
                 "<summary>Click to expand test code</summary>",
                 "",
-                "```python",
+                f"```{test_language}",
                 review.generated_tests.rstrip().replace("```", "``\\`"),
                 "```",
                 "",

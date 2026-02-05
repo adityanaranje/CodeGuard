@@ -116,6 +116,16 @@ class Config:
         return int(os.getenv("LLM_CHANGE_THRESHOLD", "150"))
 
     @property
+    def llm_file_limit(self) -> int:
+        """Get file count limit for switching models."""
+        return int(os.getenv("LLM_FILE_LIMIT", "5"))
+
+    @property
+    def llm_token_limit(self) -> int:
+        """Get token count limit for switching models."""
+        return int(os.getenv("LLM_TOKEN_LIMIT", "4000"))
+
+    @property
     def enable_rag(self) -> bool:
         """Check if RAG (Deep Context) is enabled."""
         return os.getenv("ENABLE_RAG", "false").lower() == "true"
