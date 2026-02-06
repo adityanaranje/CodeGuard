@@ -555,10 +555,11 @@ def api_stats():
         repo=repo if repo != "all" else None
     )
     
-    # Get recent reviews for activity feed
+    # Get recent reviews for activity feed (deduplicated)
     reviews = db.get_recent_reviews(
         repo=repo if repo != "all" else None,
-        author=author if author != "all" else None
+        author=author if author != "all" else None,
+        deduplicate=True
     )
     
     return jsonify({

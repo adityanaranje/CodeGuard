@@ -83,13 +83,24 @@ def log_review(repo_name, pr_number, author, verdict, violations_count, llm_seve
     except Exception as e:
         logger.error(f"Failed to log review: {e}")
 
-def get_recent_reviews(limit=50, repo=None, author=None):
+def get_recent_reviews(limit=50, repo=None, author=None, deduplicate=False):
     """Get most recent reviews with optional filters."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
-    query = 'SELECT * FROM review_logs'
+    if deduplicate:
+        # Get only the latest review for each PR
+        query = '''
+            SELECT * FROM review_logs 
+            WHERE id IN (
+                SELECT MAX(id) FROM review_logs 
+                GROUP BY repo_name, pr_number
+            )
+        '''
+    else:
+        query = 'SELECT * FROM review_logs'
+        
     params = []
     conditions = []
     
@@ -101,7 +112,10 @@ def get_recent_reviews(limit=50, repo=None, author=None):
         params.append(author)
         
     if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        if deduplicate:
+            query += " AND " + " AND ".join(conditions)
+        else:
+            query += " WHERE " + " AND ".join(conditions)
         
     query += ' ORDER BY id DESC LIMIT ?'
     params.append(limit)
