@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 import json
 import re
+import logging
 # from groq import Groq # removed
+
+logger = logging.getLogger(__name__)
 
 from src.config import Config
 from src.review.parser import FileDiff, DiffParser
@@ -317,19 +320,25 @@ class LLMReviewer:
                 skip_test_generation=not should_generate_tests
             )
             
-            # Parse the response (now returns JSON with code_review and generated_tests)
-            agent_result = json.loads(raw_response)
-            code_review_str = agent_result.get("code_review", "")
-            generated_tests_str = agent_result.get("generated_tests", "")
-            
             # Clean up potential markdown JSON from code_review
             clean_response = code_review_str
-            if "```json" in clean_response:
-                clean_response = clean_response.split("```json")[1].split("```")[0].strip()
-            elif "```" in clean_response:
-                 clean_response = clean_response.split("```")[1].strip()
+            # Use same robust regex as the escalation path
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', clean_response, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r'```\s*(\{.*?\})\s*```', clean_response, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r'(\{.*\})', clean_response, re.DOTALL)
+            
+            if json_match:
+                clean_response = json_match.group(1)
 
-            review_data = json.loads(clean_response)
+            try:
+                review_data = json.loads(clean_response, strict=False)
+            except json.JSONDecodeError:
+                # If first parse fails, try the newline fix immediately
+                fixed_response = re.sub(r'(?<!\\)\n', r'\\n', clean_response)
+                review_data = json.loads(fixed_response, strict=False)
+
             severity_score = min(10, max(1, review_data.get("severity_score", 5)))
             
             # Phase 5: Check if we need to escalate to large model
@@ -366,12 +375,18 @@ class LLMReviewer:
                     clean_response = json_match.group(1)
                 
                 try:
-                    review_data = json.loads(clean_response)
+                    review_data = json.loads(clean_response, strict=False)
                 except json.JSONDecodeError as e:
+                    logger.warning(f"Initial JSON parse failed: {e}. Attempting deep clean...")
                     # Try simple cleaning: replace unescaped newlines in middle of strings
                     # (Experimental, but often helpful)
                     fixed_response = re.sub(r'(?<!\\)\n', r'\\n', clean_response)
-                    review_data = json.loads(fixed_response)
+                    try:
+                        review_data = json.loads(fixed_response, strict=False)
+                    except json.JSONDecodeError:
+                        # Final attempt: try to find anything that looks like JSON
+                        # or just raise to trigger the fallback
+                        raise
 
                 severity_score = min(10, max(1, review_data.get("severity_score", 5)))
                 print(f"Large model review complete. Final severity: {severity_score}")
