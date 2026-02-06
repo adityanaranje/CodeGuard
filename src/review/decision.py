@@ -128,6 +128,12 @@ class DecisionEngine:
                 verdict = Verdict.NEEDS_REVIEW
                 reasons.append("LLM detected potential bugs in the logic")
         
+        # 3. TECHNICAL FAILURE - Upgrade to NEEDS_REVIEW if LLM failed
+        if "Review failed" in llm_review.summary:
+            if verdict == Verdict.PASS: # Only upgrade if it was going to PASS
+                verdict = Verdict.NEEDS_REVIEW
+                reasons.append("LLM review failed to process; manual verification recommended")
+        
         # If still passing but has warnings
         if verdict == Verdict.PASS and violations:
             reasons.append(f"Passed with {len(violations)} minor warning(s)")

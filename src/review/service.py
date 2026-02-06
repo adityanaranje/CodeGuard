@@ -6,6 +6,7 @@ Analyzes code changes and provides intelligent feedback.
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 import json
+import re
 # from groq import Groq # removed
 
 from src.config import Config
@@ -354,12 +355,24 @@ class LLMReviewer:
                 generated_tests_str = agent_result.get("generated_tests", "")
                 
                 clean_response = code_review_str
-                if "```json" in clean_response:
-                    clean_response = clean_response.split("```json")[1].split("```")[0].strip()
-                elif "```" in clean_response:
-                    clean_response = clean_response.split("```")[1].strip()
+                # Robust extraction: try markdown blocks first, then outermost braces
+                json_match = re.search(r'```json\s*(\{.*?\})\s*```', clean_response, re.DOTALL)
+                if not json_match:
+                    json_match = re.search(r'```\s*(\{.*?\})\s*```', clean_response, re.DOTALL)
+                if not json_match:
+                    json_match = re.search(r'(\{.*\})', clean_response, re.DOTALL)
                 
-                review_data = json.loads(clean_response)
+                if json_match:
+                    clean_response = json_match.group(1)
+                
+                try:
+                    review_data = json.loads(clean_response)
+                except json.JSONDecodeError as e:
+                    # Try simple cleaning: replace unescaped newlines in middle of strings
+                    # (Experimental, but often helpful)
+                    fixed_response = re.sub(r'(?<!\\)\n', r'\\n', clean_response)
+                    review_data = json.loads(fixed_response)
+
                 severity_score = min(10, max(1, review_data.get("severity_score", 5)))
                 print(f"Large model review complete. Final severity: {severity_score}")
             
@@ -393,9 +406,10 @@ class LLMReviewer:
             )
             
         except Exception as e:
+            logger.error(f"LLM Review failed: {e}")
             return LLMReview(
                 summary=f"Review failed: {str(e)}",
-                severity_score=5,
+                severity_score=8,  # Higher fallback to trigger intervention
                 issues=[],
                 suggestions=[],
                 security_concerns=[],

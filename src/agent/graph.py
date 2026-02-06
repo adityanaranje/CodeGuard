@@ -92,7 +92,8 @@ class Agent:
         Use these EXACT line numbers when reporting issues.
         
         Output Format:
-        You must return a VALID JSON object (clean, no markdown formatting around it if possible) with:
+        You MUST return your review wrapped in a ```json markdown block:
+        ```json
         {
             "summary": "...",
             "severity_score": int (1-10),
@@ -103,13 +104,15 @@ class Agent:
                     "line": int, 
                     "description": "...", 
                     "suggestion": "...",
-                    "fixed_code": "actual corrected code snippet that can be directly replaced"
+                    "fixed_code": "actual corrected code snippet"
                 }
             ],
             "suggestions": ["..."],
             "security_concerns": ["..."],
             "positive_feedback": ["..."]
         }
+        ```
+
         
         IMPORTANT:
         - For each issue, provide the 'fixed_code' field with the actual corrected code that can replace the problematic code.
