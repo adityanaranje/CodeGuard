@@ -165,6 +165,21 @@ class Config:
         """Check if bot should automatically commit fixes to PR branch."""
         return os.getenv("ENABLE_AUTO_FIX_COMMITS", "false").lower() == "true"
     
+    @property
+    def min_issue_confidence(self) -> int:
+        """Minimum confidence score to report an issue (1-10)."""
+        return int(os.getenv("MIN_ISSUE_CONFIDENCE", "7"))
+    
+    @property
+    def enable_multi_pass_security(self) -> bool:
+        """Enable second-pass review for critical security issues."""
+        return os.getenv("ENABLE_MULTI_PASS_SECURITY", "true").lower() == "true"
+    
+    @property
+    def enable_response_validation(self) -> bool:
+        """Enable validation of LLM responses before posting."""
+        return os.getenv("ENABLE_RESPONSE_VALIDATION", "true").lower() == "true"
+    
     
     @property
     def webhook_port(self) -> int:

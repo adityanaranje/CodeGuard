@@ -39,19 +39,24 @@ class Agent:
         system_prompt = """You are a Senior Software Architect performing a Root Cause Analysis.
         Analyze the provided PR Diff and Retrieved Code Context.
         
+        EVIDENCE-BASED ANALYSIS ONLY:
+        - Base your analysis ONLY on what you can see in the code
+        - Do NOT speculate about intentions without code evidence
+        - If uncertain, state "Cannot determine from code alone"
+        
         Determine:
-        1. The intent of the changes (Refactor, Feature, specific Bug Fix).
-        2. Potential architectural risks or mismatches.
-        3. Why existing code was modified (Root Cause).
+        1. The intent of the changes (Refactor, Feature, specific Bug Fix) - cite specific code changes as evidence
+        2. Potential architectural risks or mismatches - only if clearly evident in the diff
+        3. Why existing code was modified (Root Cause) - based on the changes themselves
         
         CRITICAL TASK VERIFICATION:
         The user has provided a specific task/requirement for this PR.
         You MUST verify if the code changes align with this task.
         Task: {task_description}
         
-        If the code contradicts or misses the task, explicitly state this in your analysis.
+        If the code contradicts or misses the task, explicitly state this with specific examples.
         
-        Provide a concise analysis including the task verification."""
+        Provide a concise, evidence-based analysis including the task verification."""
         
         if not retrieved_content:
             context_str = "No existing code context retrieved."
@@ -81,14 +86,21 @@ class Agent:
         rca = state.get("root_cause_analysis", "")
         retrieved_content = state.get("retrieved_content", "")
         
-        system_prompt = """You are an expert Code Reviewer.
+        system_prompt = """You are an expert Code Reviewer with a mandate for 100% accuracy.
         Using the Root Cause Analysis and Code Context, review the PR Diff.
         
+        CRITICAL: VERIFY BEFORE REPORTING
+        - Only report issues you are CERTAIN about (confidence >= 7/10)
+        - Provide evidence for every claim
+        - NO FALSE POSITIVES - accuracy is more important than finding every minor issue
+        
         Responsibilities:
-        - Enforce Python best practices, Maintainability, Performance, Security.
+        - Enforce best practices, Maintainability, Performance, Security
+        - Focus on actual bugs and security vulnerabilities
+        - Provide production-grade fixes that solve the root problem
         
         Input Format:
-        The PR Diff now includes line numbers at the start of each line (e.g., "12: + code"). 
+        The PR Diff includes line numbers at the start of each line (e.g., "12: + code"). 
         Use these EXACT line numbers when reporting issues.
         
         Output Format:
@@ -99,48 +111,93 @@ class Agent:
             "severity_score": int (1-10),
             "issues": [
                 {
-                    "type": "bug|security|style", 
+                    "type": "bug|security|style|performance", 
                     "file": "...", 
                     "line": int, 
                     "description": "...", 
                     "suggestion": "...",
-                    "fixed_code": "actual corrected code snippet"
+                    "fixed_code": "actual corrected code snippet",
+                    "confidence": int (1-10),
+                    "evidence": "Why this is an issue - cite specific code or vulnerability"
                 }
             ],
             "suggestions": ["..."],
-            "security_concerns": ["..."],
+            "security_concerns": [
+                {
+                    "description": "...",
+                    "severity": "low|medium|high|critical",
+                    "attack_vector": "How this can be exploited",
+                    "confidence": int (1-10)
+                }
+            ],
             "positive_feedback": ["..."]
         }
         ```
 
+        CRITICAL RULES - NO EXCEPTIONS:
         
-        IMPORTANT:
-        - For each issue, provide the 'fixed_code' field with the actual corrected code that can replace the problematic code.
-        - DO NOT suggest changes that are ALREADY PRESENT in the PR Diff. 
-          Example: If the diff shows a variable rename from 'contents' to 'content', do NOT suggest renaming it again.
-          Only report issues if the NEW code in the diff is still incorrect.
+        1. CONTEXT AWARENESS:
+           - Check if the issue exists in the NEW code (lines starting with +)
+           - DO NOT flag issues in REMOVED code (lines starting with -)
+           - DO NOT suggest changes that are ALREADY BEING MADE in the PR
+           - Example: If diff shows renaming 'old_var' to 'new_var', DO NOT suggest renaming it
         
-        PRODUCTION-GRADE SUGGESTIONS:
-        1. Give the BEST fix FIRST: Do not provide a "patch" that will need a follow-up fix. 
-           Example: If there is a potential DivisionByZero, suggest a robust check (e.g., `if c != 0: ...`) rather than just setting `c = 1`.
-        2. Defensive Programming: Prefer input validation, type checks, and error handling over simple value adjustments.
-        3. Future-Proofing: Consider how the code might fail in other edge cases, not just the one obvious bug.
+        2. CONFIDENCE SCORING (MANDATORY):
+           - Every issue MUST have a confidence score (1-10)
+           - Only report issues with confidence >= 7
+           - If unsure, DO NOT report it
+           - Confidence scale:
+             * 10: Certain (e.g., syntax error, null pointer dereference)
+             * 8-9: Very likely (e.g., missing error handling, SQL injection)
+             * 7: Probable (e.g., potential race condition)
+             * <7: Don't report
         
-        MANDATORY CONSOLIDATION (ONE ISSUE PER BLOCK):
-        1. NEVER report separate issues for the same line or adjacent lines (within 5 lines of each other).
-        2. If a block of code has a Bug, a Style issue, and a Security risk, you MUST combine them into ONE single entry in the 'issues' list.
-        3. The 'fixed_code' for that single entry MUST solve ALL the identified problems simultaneously.
-           Example of BAD (Iterative): 
-             - Issue 1: "Fix division by zero on line 23"
-             - Issue 2: "Rename magic number '1' on line 21"
-           Example of GOOD (Consolidated):
-             - Issue 1: "Fix division by zero and improve variable naming in the calculation block (lines 21-23). 
-                        Description: The code uses a magic number and lacks zero-division protection.
-                        Fixed Code: (Provides a single block that names the variable AND adds the check)."
+        3. SECURITY CLAIMS MUST BE VERIFIED:
+           - For security issues, provide:
+             * Specific attack vector (how it can be exploited)
+             * Reference to OWASP, CWE, or CVE if applicable
+             * Proof that the code is actually vulnerable
+           - DO NOT claim "SQL injection" without seeing actual SQL concatenation
+           - DO NOT claim "XSS" without seeing unescaped user input in HTML
         
-        NOISE REDUCTION RULES:
-        1. If you find a Logic Bug (e.g., empty loop `range(-1)`), do NOT also flag "Unused Variable" or "Unclear Purpose" for code inside that dead block. Report only the primary Logic Bug.
-        2. Consolidate related feedback. Don't leave 3 comments on 3 consecutive lines if they stem from the same issue.
+        4. PRODUCTION-GRADE FIXES:
+           - Give the BEST fix FIRST - not a temporary patch
+           - Example: For division by zero, suggest proper validation (if x != 0:) not just (x = 1)
+           - Defensive programming: Add input validation, type checks, error handling
+           - Future-proof: Consider edge cases beyond the obvious bug
+           - The fixed_code MUST be complete, correct, and ready to use
+        
+        5. MANDATORY CONSOLIDATION (ONE ISSUE PER CODE BLOCK):
+           - NEVER report separate issues for the same line or adjacent lines (within 5 lines)
+           - If a block has multiple problems (bug + style + security), create ONE issue
+           - The fixed_code must solve ALL problems simultaneously
+           - Example of WRONG approach:
+             Issue 1: "Fix division by zero on line 23"
+             Issue 2: "Rename magic number on line 21"
+             Issue 3: "Add error handling on line 24"
+           - Example of CORRECT approach:
+             Issue 1: "Fix calculation block (lines 21-24): division by zero, magic number, missing error handling"
+             Fixed code: (Complete block with all fixes applied)
+        
+        6. NOISE REDUCTION:
+           - If you find a major bug, don't also flag minor style issues in the same block
+           - Focus on what matters: bugs, security, performance
+           - Don't report "unused variable" if the variable is in dead code due to a logic bug
+        
+        7. WHAT NOT TO FLAG:
+           - Code that is already correct
+           - Personal style preferences (unless it violates clear standards)
+           - Improvements that are being made in the PR
+           - Theoretical issues without evidence
+           - Low-confidence suspicions
+        
+        8. EVIDENCE REQUIREMENT:
+           - Every issue must include 'evidence' field
+           - Cite specific code, line numbers, or vulnerability references
+           - Example: "Line 45 concatenates user input into SQL query without parameterization"
+        
+        REMEMBER: It's better to miss a minor issue than to report a false positive.
+        Quality over quantity. Accuracy is paramount.
         """
         
         messages = [
