@@ -346,7 +346,9 @@ def webhook_handler():
     logger.info(f"Action: {action}")
     
     # Only review on opened or synchronize (new commits)
-    if action not in ("opened", "synchronize", "reopened"):
+    # Only review on opened or synchronize (new commits)
+    # Also handle 'closed' for merge tracking
+    if action not in ("opened", "synchronize", "reopened", "closed"):
         logger.info(f"Ignoring action: {action}")
         return jsonify({"message": f"Ignoring action: {action}"}), 200
     
@@ -359,6 +361,24 @@ def webhook_handler():
     pr_number = pr.get("number")
     installation_id = installation.get("id")
     
+    # Handle merge event (Action: closed + merged: true)
+    if action == "closed" and pr.get("merged"):
+        merged_by = pr.get("merged_by", {}).get("login", "unknown")
+        logger.info(f"PR #{pr_number} merged by {merged_by}. Checking for overrides...")
+        
+        try:
+            was_overridden = db.track_merge(repo_name, pr_number, merged_by)
+            if was_overridden:
+                logger.warning(f"🚨 ALERT: PR #{pr_number} was merged despite bot failure!")
+            return jsonify({"message": "Merge tracked", "overridden": was_overridden}), 200
+        except Exception as e:
+            logger.error(f"Failed to track merge: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    # For reviews, skip if action is 'closed'
+    if action == "closed":
+         return jsonify({"message": "PR closed (not merged or already handled)"}), 200
+
     logger.info(f"Processing PR #{pr_number} for {repo_name} (Installation: {installation_id})")
     
     if not repo_name or not pr_number:
@@ -408,14 +428,24 @@ def api_stats():
     repo = request.args.get('repo')
     author = request.args.get('author')
     
-    stats = db.get_stats(repo, author)
-    reviews = db.get_recent_reviews(repo=repo, author=author)
-    trend_data = db.get_daily_stats(repo, author)
+    stats = db.get_stats(
+        repo=repo if repo != "all" else None,
+        author=author if author != "all" else None
+    )
+    
+    daily_stats = db.get_daily_stats(
+        repo=repo if repo != "all" else None,
+        author=author if author != "all" else None
+    )
+    
+    override_stats = db.get_override_stats(
+        repo=repo if repo != "all" else None
+    )
     
     return jsonify({
-        "stats": stats, 
-        "reviews": reviews,
-        "trend_data": trend_data
+        "stats": stats,
+        "daily_stats": daily_stats,
+        "override_stats": override_stats
     })
 
 

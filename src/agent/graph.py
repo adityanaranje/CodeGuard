@@ -107,7 +107,11 @@ class Agent:
             "positive_feedback": ["..."]
         }
         
-        IMPORTANT: For each issue, provide the 'fixed_code' field with the actual corrected code that can replace the problematic code.
+        IMPORTANT:
+        - For each issue, provide the 'fixed_code' field with the actual corrected code that can replace the problematic code.
+        - DO NOT suggest changes that are ALREADY PRESENT in the PR Diff. 
+          Example: If the diff shows a variable rename from 'contents' to 'content', do NOT suggest renaming it again.
+          Only report issues if the NEW code in the diff is still incorrect.
         """
         
         messages = [

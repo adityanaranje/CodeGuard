@@ -284,7 +284,7 @@
             </header>
 
             <div class="row g-4 mb-4">
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <div class="glass-card d-flex flex-column">
                         <div class="metric-title">Snapshot</div>
                         <div class="stats-grid">
@@ -311,7 +311,34 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-7">
+                <div class="col-md-3">
+                    <div class="glass-card d-flex flex-column"
+                        style="position: relative; overflow: hidden; height: 100%;">
+                        <div class="metric-title" style="width: 100%; text-align: left;">Review Overrides</div>
+                        <div class="d-flex align-items-baseline mb-3">
+                            <div class="stat-value fail" id="overrideCount"
+                                style="font-size: 3.5rem; margin-right: 1rem;">0</div>
+                            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">merged despite failure
+                            </p>
+                        </div>
+
+                        <div class="metric-title"
+                            style="font-size: 0.75rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">Recent Overrides
+                        </div>
+                        <div id="overrideList"
+                            style="flex-grow: 1; overflow-y: auto; font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.5rem;">
+                            <!-- List of overridden PRs -->
+                        </div>
+
+                        <div
+                            style="position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: rgba(255, 105, 180, 0.2);">
+                            <div id="overrideBar"
+                                style="height: 100%; width: 0%; background: var(--accent-magenta); transition: width 1s;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-5">
                     <div class="glass-card">
                         <div class="d-flex justify-content-between align-items-center mb-4">
                             <div class="metric-title">Verdict Distribution</div>
@@ -432,6 +459,45 @@
                     icon.textContent = '↓';
                     container.style.color = 'var(--accent-magenta)';
                 }
+
+                // Update Overrides
+                const overrideCount = data.override_stats.count || 0;
+                document.getElementById('overrideCount').textContent = overrideCount;
+
+                // Update Override List
+                const overrideList = document.getElementById('overrideList');
+                overrideList.innerHTML = '';
+
+                if (data.override_stats.recent && data.override_stats.recent.length > 0) {
+                    data.override_stats.recent.forEach(item => {
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '0.75rem';
+                        div.style.background = 'rgba(255, 105, 180, 0.1)';
+                        div.style.padding = '0.5rem';
+                        div.style.borderRadius = '8px';
+
+                        // Format date
+                        const date = new Date(item.timestamp).toLocaleDateString();
+
+                        div.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <strong style="color: #fff;">${item.repo_name.split('/')[1]} #${item.pr_number}</strong>
+                                <span style="font-size: 0.7rem; opacity: 0.7;">${date}</span>
+                            </div>
+                            <div style="color: var(--text-muted); margin-top: 2px;">
+                                <span>Merged by: <span style="color: var(--accent-magenta);">${item.merged_by}</span></span>
+                            </div>
+                        `;
+                        overrideList.appendChild(div);
+                    });
+                } else {
+                    overrideList.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 1rem;">No overrides found</div>';
+                }
+
+                // Calculate percentage for progress bar (vs total failures)
+                const totalFailures = data.stats.verdict_counts.FAIL || 1; // avoid divide by zero
+                const overridePercent = Math.min((overrideCount / totalFailures) * 100, 100);
+                document.getElementById('overrideBar').style.width = `${overridePercent}%`;
 
                 updateVerdictChart(data.stats.verdict_counts);
                 updateAuthorChart(data.stats.author_stats);

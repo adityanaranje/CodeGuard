@@ -217,3 +217,85 @@ def get_daily_stats(repo=None, author=None):
     conn.close()
     
     return [dict(row) for row in rows]
+    return [dict(row) for row in rows]
+
+def track_merge(repo_name, pr_number, merged_by):
+    """
+    Track when a PR is merged.
+    Returns True if this PR was previously failed by the bot.
+    """
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Migrations if needed
+        try:
+            c.execute("ALTER TABLE review_logs ADD COLUMN merged_at TEXT")
+            c.execute("ALTER TABLE review_logs ADD COLUMN merged_by TEXT")
+            c.execute("ALTER TABLE review_logs ADD COLUMN was_overridden INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass # Columns likely exist
+
+        # Find the latest review for this PR
+        c.execute('''
+            SELECT id, verdict FROM review_logs 
+            WHERE repo_name = ? AND pr_number = ? 
+            ORDER BY id DESC LIMIT 1
+        ''', (repo_name, pr_number))
+        
+        last_review = c.fetchone()
+        was_overridden = False
+
+        if last_review:
+            # Check if bot failed it (FAIL or CHANGES_REQUESTED)
+            if last_review['verdict'] in ('FAIL', 'CHANGES_REQUESTED', 'NEEDS_REVIEW'):
+                was_overridden = True
+            
+            # Update the log
+            c.execute('''
+                UPDATE review_logs 
+                SET merged_at = ?, merged_by = ?, was_overridden = ?
+                WHERE id = ?
+            ''', (
+                datetime.now(timezone.utc).isoformat(),
+                merged_by,
+                1 if was_overridden else 0,
+                last_review['id']
+            ))
+            
+            conn.commit()
+            logger.info(f"Tracked merge for PR #{pr_number} (Overridden: {was_overridden})")
+            return was_overridden
+            
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to track merge: {e}")
+    return False
+
+def get_override_stats(repo=None):
+    """Get statistics on ignored/overridden reviews."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    
+    where_clause = "WHERE was_overridden = 1"
+    params = []
+    
+    if repo:
+        where_clause += " AND repo_name = ?"
+        params.append(repo)
+        
+    c.execute(f'SELECT COUNT(*) FROM review_logs {where_clause}', params)
+    count = c.fetchone()[0]
+    
+    # Get details of recent overrides
+    c.execute(f'''
+        SELECT repo_name, pr_number, author, merged_by, timestamp 
+        FROM review_logs {where_clause} 
+        ORDER BY id DESC LIMIT 10
+    ''', params)
+    
+    recent_overrides = [dict(zip(['repo_name', 'pr_number', 'author', 'merged_by', 'timestamp'], row)) for row in c.fetchall()]
+    
+    conn.close()
+    return {"count": count, "recent": recent_overrides}
