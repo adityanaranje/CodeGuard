@@ -36,6 +36,21 @@ def init_db():
         c.execute("ALTER TABLE review_logs ADD COLUMN files_changed INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass # Column likely exists
+
+    try:
+        c.execute("ALTER TABLE review_logs ADD COLUMN merged_at TEXT")
+    except sqlite3.OperationalError:
+        pass # Column likely exists
+
+    try:
+        c.execute("ALTER TABLE review_logs ADD COLUMN merged_by TEXT")
+    except sqlite3.OperationalError:
+        pass # Column likely exists
+
+    try:
+        c.execute("ALTER TABLE review_logs ADD COLUMN was_overridden INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass # Column likely exists
         
     conn.commit()
     conn.close()
@@ -229,13 +244,8 @@ def track_merge(repo_name, pr_number, merged_by):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # Migrations if needed
-        try:
-            c.execute("ALTER TABLE review_logs ADD COLUMN merged_at TEXT")
-            c.execute("ALTER TABLE review_logs ADD COLUMN merged_by TEXT")
-            c.execute("ALTER TABLE review_logs ADD COLUMN was_overridden INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass # Columns likely exist
+        # Migrations handled in init_db
+
 
         # Find the latest review for this PR
         c.execute('''
