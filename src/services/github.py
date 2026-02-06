@@ -242,6 +242,8 @@ class GitHubClient:
             }
             if "side" in comment:
                 review_comment["side"] = comment["side"]
+            if "start_line" in comment:
+                review_comment["start_line"] = comment["start_line"]
             
             review_comments.append(review_comment)
         

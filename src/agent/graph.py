@@ -113,6 +113,7 @@ class Agent:
                 {
                     "type": "bug|security|style|performance", 
                     "file": "...", 
+                    "start_line": int,
                     "line": int, 
                     "description": "...", 
                     "suggestion": "...",
@@ -135,6 +136,11 @@ class Agent:
         ```
 
         CRITICAL RULES - NO EXCEPTIONS:
+        
+        0. MULTI-LINE SUGGESTIONS:
+           - If an issue covers multiple lines, specify 'start_line' (first line) and 'line' (last line).
+           - The 'fixed_code' MUST be a drop-in replacement for EXACTLY the range [start_line, line].
+           - DO NOT include lines outside this range in 'fixed_code'.
         
         1. CONTEXT AWARENESS:
            - Check if the issue exists in the NEW code (lines starting with +)

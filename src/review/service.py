@@ -630,11 +630,17 @@ class LLMReviewer:
                 # Note: No language identifier is used for suggestion blocks
                 body_parts.append(f"\n\n🔧 **Fixed Code:**\n```suggestion\n{issue['fixed_code'].strip()}\n```")
             
-            comments.append({
+            inline_comment = {
                 "path": issue['file'],
                 "line": issue['line'],
                 "body": "\n".join(body_parts)
-            })
+            }
+            
+            # Support multi-line suggestions if start_line is provided
+            if issue.get('start_line'):
+                inline_comment["start_line"] = issue['start_line']
+            
+            comments.append(inline_comment)
         
         return comments
 

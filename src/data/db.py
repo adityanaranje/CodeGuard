@@ -144,16 +144,36 @@ def get_stats(repo=None, author=None):
     if conditions:
         where_clause = " WHERE " + " AND ".join(conditions)
     
-    # Total reviews
-    c.execute(f'SELECT COUNT(*) FROM review_logs{where_clause}', params)
+    # Total unique PRs reviewed
+    c.execute(f'''
+        SELECT COUNT(DISTINCT pr_number || repo_name) 
+        FROM review_logs{where_clause}
+    ''', params)
     total_reviews = c.fetchone()[0]
     
-    # Verdict counts
-    c.execute(f'SELECT verdict, COUNT(*) FROM review_logs{where_clause} GROUP BY verdict', params)
+    # Verdict counts based on latest review per PR
+    dedup_where = where_clause + (" AND " if where_clause else " WHERE ")
+    c.execute(f'''
+        SELECT verdict, COUNT(*) 
+        FROM review_logs 
+        WHERE id IN (
+            SELECT MAX(id) FROM review_logs 
+            {where_clause}
+            GROUP BY repo_name, pr_number
+        )
+        GROUP BY verdict
+    ''', params)
     verdict_counts = dict(c.fetchall())
     
-    # Author stats (for chart)
-    c.execute(f'SELECT author, COUNT(*) as count FROM review_logs{where_clause} GROUP BY author ORDER BY count DESC LIMIT 10', params)
+    # Author stats based on unique PRs
+    c.execute(f'''
+        SELECT author, COUNT(DISTINCT pr_number || repo_name) as count 
+        FROM review_logs 
+        {where_clause} 
+        GROUP BY author 
+        ORDER BY count DESC 
+        LIMIT 10
+    ''', params)
     author_stats = dict(c.fetchall())
 
     # Calculate Activity Change (Last 7 days vs previous 7 days)
