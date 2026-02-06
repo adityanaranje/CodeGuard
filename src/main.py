@@ -163,110 +163,97 @@ class PRReviewBot:
                 
                 # Post inline comments if there are any issues with file/line info
                 inline_comments = self.llm_reviewer.get_inline_comments(llm_review)
-                if inline_comments:
-                    # Deduplicate comments
-                    try:
-                        existing_comments = self.github_client.get_comments(repo_name, pr_number)
-                        existing_bodies = [c.body for c in existing_comments if c.body]
-                        
-                        unique_comments = []
-                        for comment in inline_comments:
-                            is_duplicate = False
-                            # Check if a substantially similar comment already exists
-                            # Simple check: if 80% of the new comment is in an existing comment
-                            # This handles cases where the bot might vary the intro/outro slightly
-                            for existing_body in existing_bodies:
-                                if comment['body'] in existing_body or existing_body in comment['body']:
-                                    is_duplicate = True
-                                    break
-                                    
-                                # Check for specific fix suggestions which are often unique
-                                if "```suggestion" in comment['body'] and "```suggestion" in existing_body:
-                                    # Extract just the code part for comparison
-                                    new_code = comment['body'].split("```suggestion")[1].split("```")[0].strip()
-                                    existing_code = existing_body.split("```suggestion")[1].split("```")[0].strip()
-                                    if new_code == existing_code:
+                    if inline_comments:
+                         # Deduplicate comments
+                        try:
+                            existing_comments = self.github_client.get_comments(repo_name, pr_number)
+                            existing_bodies = [c.body for c in existing_comments if c.body]
+                            # Also cache existing comments by file/line for fuzzy matching
+                            existing_locs = {}
+                            for c in existing_comments:
+                                # Parsing path and line from comment data is tricky for issue comments, 
+                                # but review comments have them.
+                                if hasattr(c, 'path') and hasattr(c, 'line') and c.path and c.line:
+                                    key = f"{c.path}:{c.line}"
+                                    if key not in existing_locs:
+                                        existing_locs[key] = []
+                                    existing_locs[key].append(c.body)
+
+                            unique_comments = []
+                            for comment in inline_comments:
+                                is_duplicate = False
+                                
+                                # 1. Strict Body Match
+                                for existing_body in existing_bodies:
+                                    if comment['body'] in existing_body or existing_body in comment['body']:
                                         is_duplicate = True
                                         break
-                            
-                            if not is_duplicate:
-                                unique_comments.append(comment)
-                            else:
-                                logger.info(f"  ⏭️ Skipping duplicate comment for {comment['path']}:{comment['line']}")
-                        
-                        inline_comments = unique_comments
-                    except Exception as e:
-                        logger.warning(f"  ⚠️ Failed to deduplicate comments: {e}")
+                                    
+                                    # 2. Strict Code Suggestion Match
+                                    if "```suggestion" in comment['body'] and "```suggestion" in existing_body:
+                                        try:
+                                            new_code = comment['body'].split("```suggestion")[1].split("```")[0].strip()
+                                            existing_code = existing_body.split("```suggestion")[1].split("```")[0].strip()
+                                            if new_code == existing_code:
+                                                is_duplicate = True
+                                                break
+                                        except IndexError:
+                                            pass
 
-                    if inline_comments:
-                        logger.info(f"  💬 Posting {len(inline_comments)} inline comment(s)...")
-                        try:
-                            self.github_client.post_inline_comments(
-                                repo_name=repo_name,
-                                pr_number=pr_number,
-                                comments=inline_comments,
-                                body="Code suggestions with fixes",
-                                event="COMMENT"
-                            )
-                            logger.info("  ✅ Inline comments posted successfully!")
+                                # 3. Fuzzy Location Match (Same file, same/nearby line, similar content)
+                                if not is_duplicate:
+                                    path = comment['path']
+                                    line = comment['line']
+                                    # Check exact line and adjacent lines
+                                    nearby_lines = [line, line-1, line+1]
+                                    for l in nearby_lines:
+                                        key = f"{path}:{l}"
+                                        if key in existing_locs:
+                                            for existing_body in existing_locs[key]:
+                                                # If overlap in keywords (e.g. types)
+                                                keywords = ["Security", "Bug", "Style", "Performance", "Typo"]
+                                                for kw in keywords:
+                                                    if f"**{kw}**" in comment['body'] and f"**{kw}**" in existing_body:
+                                                        logger.info(f"  ⏭️ Skipping duplicate {kw} comment at {path}:{line} (similar to {path}:{l})")
+                                                        is_duplicate = True
+                                                        break
+                                                if is_duplicate: break
+                                        if is_duplicate: break
+
+                                if not is_duplicate:
+                                    unique_comments.append(comment)
+                                else:
+                                    logger.info(f"  ⏭️ Skipping duplicate comment for {comment['path']}:{comment['line']}")
+                            
+                            inline_comments = unique_comments
                         except Exception as e:
-                            logger.warning(f"  ⚠️ Failed to post inline comments: {e}")
-                    else:
-                         logger.info("  ✨ No new unique comments to post.")
+                            logger.warning(f"  ⚠️ Failed to deduplicate comments: {e}")
+
+                        if inline_comments:
+                            logger.info(f"  💬 Posting {len(inline_comments)} inline comment(s)...")
+                            try:
+                                self.github_client.post_inline_comments(
+                                    repo_name=repo_name,
+                                    pr_number=pr_number,
+                                    comments=inline_comments,
+                                    body="Code suggestions with fixes",
+                                    event="COMMENT"
+                                )
+                                logger.info("  ✅ Inline comments posted successfully!")
+                            except Exception as e:
+                                logger.warning(f"  ⚠️ Failed to post inline comments: {e}")
+                        else:
+                             logger.info("  ✨ No new unique comments to post.")
                 
                 # Auto-commit fixes if enabled
                 if self.config.enable_auto_fix_commits and llm_review.issues:
-                    logger.info("  🔧 Auto-commit fixes enabled. Applying fixes to PR branch...")
-                    fixes_to_apply = []
-                    total_fix_lines = 0
+                    # DISABLE auto-commit for now to prevent file corruption
+                    # logger.info("  🔧 Auto-commit fixes enabled. Applying fixes to PR branch...")
+                    logger.warning("  🛑 Auto-commit fixes DISABLED temporarily to prevent file overwrites.")
                     
-                    for issue in llm_review.issues:
-                        if issue.get('fixed_code') and issue.get('file'):
-                            # Count lines in the fix
-                            fix_line_count = len(issue['fixed_code'].split('\n'))
-                            total_fix_lines += fix_line_count
-                            
-                            # Get current file content
-                            try:
-                                current_content = self.github_client.get_file_content(
-                                    repo_name=repo_name,
-                                    file_path=issue['file'],
-                                    ref=pr_details.head_branch
-                                )
-                                
-                                # Apply the fix (simple replacement for now)
-                                # TODO: More sophisticated patching logic
-                                fixes_to_apply.append({
-                                    "file": issue['file'],
-                                    "content": issue['fixed_code'],
-                                    "description": issue.get('description', 'Auto-fix')
-                                })
-                            except Exception as e:
-                                logger.warning(f"  ⚠️ Could not prepare fix for {issue['file']}: {e}")
-                    
-                    # Safety check: Don't auto-commit if changes are too large
-                    if total_fix_lines > 100:
-                        logger.warning(f"  ⚠️ Auto-commit skipped: Changes too large ({total_fix_lines} lines > 100 line limit)")
-                        logger.info("  💡 Fixes are available in inline comments for manual review")
-                    elif fixes_to_apply:
-                        try:
-                            committed_files = self.github_client.apply_fixes_to_pr(
-                                repo_name=repo_name,
-                                pr_number=pr_number,
-                                fixes=fixes_to_apply
-                            )
-                            logger.info(f"  ✅ Auto-committed fixes to {len(committed_files)} file(s) ({total_fix_lines} lines)")
-                            
-                            # Post comment about auto-fixes
-                            fix_comment = f"🤖 **Auto-fixes applied!**\n\nI've automatically committed fixes to the following files:\n"
-                            for file in committed_files:
-                                fix_comment += f"- `{file}`\n"
-                            fix_comment += f"\n**Total changes:** {total_fix_lines} lines\n"
-                            fix_comment += "\nPlease review the changes and let me know if you need any adjustments!"
-                            
-                            self.github_client.post_issue_comment(repo_name, pr_number, fix_comment)
-                        except Exception as e:
-                            logger.error(f"  ❌ Failed to auto-commit fixes: {e}")
+                    # fixes_to_apply = []
+                    # ... [Disabled logic] ...
+
                 
                 
             except Exception as e:
