@@ -407,11 +407,41 @@ def webhook_handler():
     logger.info(f"Action: {action}")
     
     # Only review on opened or synchronize (new commits)
-    # Only review on opened or synchronize (new commits)
     # Also handle 'closed' for merge tracking
     if action not in ("opened", "synchronize", "reopened", "closed"):
         logger.info(f"Ignoring action: {action}")
         return jsonify({"message": f"Ignoring action: {action}"}), 200
+    
+    # CRITICAL FIX: Smart loop prevention for bot commits
+    # When users accept bot suggestions, GitHub creates a commit authored by the bot
+    # Strategy: Allow ONE verification review, then stop to prevent infinite loops
+    if action == "synchronize":
+        pr = payload.get("pull_request", {})
+        head_user = pr.get("head", {}).get("user", {}).get("login", "")
+        
+        # Check if the commit is from the bot itself
+        if "bot" in head_user.lower() or head_user.startswith("pr-reviewer-aditya"):
+            # Get recent reviews for this PR to count how many times we've reviewed it
+            recent = db.get_recent_reviews(limit=5, repo=repo_name)
+            pr_number = pr.get("number")
+            
+            # Count reviews for this specific PR
+            pr_reviews = [r for r in recent if r.get("pr_number") == pr_number]
+            
+            if len(pr_reviews) >= 2:
+                # We've already reviewed this PR at least twice
+                # First review: Found issues
+                # Second review: Verified fixes (or found more issues)
+                # Stop here to prevent infinite loop
+                logger.info(f"⏭️ Skipping review: Already reviewed PR #{pr_number} {len(pr_reviews)} times")
+                logger.info(f"   Preventing infinite loop on bot commits")
+                logger.info(f"   Last verdict: {pr_reviews[0].get('verdict', 'unknown')}")
+                return jsonify({"message": "Skipped: Max reviews reached"}), 200
+            else:
+                # First bot commit after initial review - allow ONE verification review
+                logger.info(f"🔍 Bot commit detected on PR #{pr_number}")
+                logger.info(f"   This is verification review #{len(pr_reviews) + 1}/2")
+                logger.info(f"   Reviewing to verify that accepted suggestions fixed the issues...")
     
     # Extract PR info
     pr = payload.get("pull_request", {})
