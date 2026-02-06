@@ -436,6 +436,28 @@ def webhook_handler():
             logger.error(f"Failed to track merge: {e}")
             return jsonify({"error": str(e)}), 500
 
+    # Handle UI-based approvals (pull_request_review submitted)
+    if event_type == "pull_request_review":
+        action = payload.get("action", "")
+        review = payload.get("review", {})
+        if action == "submitted" and review.get("state") == "approved":
+            pr = payload.get("pull_request", {})
+            pr_number = pr.get("number")
+            repo_name = payload.get("repository", {}).get("full_name")
+            user = review.get("user", {}).get("login", "unknown")
+            
+            logger.info(f"✅ PR #{pr_number} approved in UI by @{user}. Logging PASS.")
+            db.log_review(
+                repo_name=repo_name,
+                pr_number=pr_number,
+                author=user,
+                verdict="PASS",
+                violations_count=0,
+                llm_severity=0,
+                comment=f"✅ Manual UI Approval by @{user}"
+            )
+            return jsonify({"message": "UI approval tracked"}), 200
+
     # For reviews, skip if action is 'closed'
     if action == "closed":
          return jsonify({"message": "PR closed (not merged or already handled)"}), 200
@@ -448,22 +470,32 @@ def webhook_handler():
     
     # Run review
     try:
-        # Loop Prevention: Skip if the sender is a bot
+        # Loop Prevention: Skip if the sender is a bot, UNLESS the last review was a failure (verification)
         sender = payload.get("sender", {})
         if sender.get("type") == "Bot" or "bot" in sender.get("login", "").lower():
-            logger.info(f"⏭️ Skipping review: Webhook triggered by bot ({sender.get('login')})")
-            return jsonify({"message": "Skipped: Bot-triggered event"}), 200
+            # Check last state
+            recent = db.get_recent_reviews(limit=1, repo=repo_name)
+            if recent and recent[0]["pr_number"] == pr_number and recent[0]["verdict"] == "PASS":
+                logger.info(f"⏭️ Skipping review: PR already PASS, triggered by bot ({sender.get('login')})")
+                return jsonify({"message": "Skipped: Already PASS"}), 200
+            elif not recent:
+                 logger.info(f"⏭️ Skipping review: No previous history, triggered by bot ({sender.get('login')})")
+                 return jsonify({"message": "Skipped: No history"}), 200
+            else:
+                logger.info(f"🤖 Bot commit detected, but last review was {recent[0]['verdict']}. Verifying fix...")
 
         # Loop Prevention: Check for recent reviews on this PR (60s cooldown)
+        # Only apply cooldown if the last review was a PASS (prevent noise on stable PRs)
+        # If the last review was a FAIL, we want to re-review immediately to verify the fix.
         recent_reviews = db.get_recent_reviews(limit=1, repo=repo_name)
         if recent_reviews:
             last_review = recent_reviews[0]
-            if last_review["pr_number"] == pr_number:
+            if last_review["pr_number"] == pr_number and last_review["verdict"] == "PASS":
                 try:
                     # last_review["timestamp"] is ISO format string
                     last_time = datetime.fromisoformat(last_review["timestamp"])
                     if datetime.now(timezone.utc) - last_time < timedelta(seconds=60):
-                        logger.warning(f"⏳ Cooldown: Skipping review for PR #{pr_number} (reviewed < 60s ago)")
+                        logger.warning(f"⏳ Cooldown: Skipping review for PR #{pr_number} (already PASS, reviewed < 60s ago)")
                         return jsonify({"message": "Skipped: Cooldown in effect"}), 200
                 except (ValueError, TypeError, KeyError):
                     pass # Fallback to running review if timestamp parsing fails
