@@ -180,19 +180,19 @@ class PRReviewBot:
                                 existing_locs[key].append(c.body)
 
                         unique_comments = []
-                        for comment in inline_comments:
+                        for ic in inline_comments:
                             is_duplicate = False
                             
                             # 1. Strict Body Match
                             for existing_body in existing_bodies:
-                                if comment['body'] in existing_body or existing_body in comment['body']:
+                                if ic['body'] in existing_body or existing_body in ic['body']:
                                     is_duplicate = True
                                     break
                                 
                                 # 2. Strict Code Suggestion Match
-                                if "```suggestion" in comment['body'] and "```suggestion" in existing_body:
+                                if "```suggestion" in ic['body'] and "```suggestion" in existing_body:
                                     try:
-                                        new_code = comment['body'].split("```suggestion")[1].split("```")[0].strip()
+                                        new_code = ic['body'].split("```suggestion")[1].split("```")[0].strip()
                                         existing_code = existing_body.split("```suggestion")[1].split("```")[0].strip()
                                         if new_code == existing_code:
                                             is_duplicate = True
@@ -202,8 +202,8 @@ class PRReviewBot:
 
                             # 3. Fuzzy Location Match (Same file, same/nearby line, similar content)
                             if not is_duplicate:
-                                path = comment['path']
-                                line = comment['line']
+                                path = ic['path']
+                                line = ic['line']
                                 # Check exact line and adjacent lines
                                 nearby_lines = [line, line-1, line+1]
                                 for l in nearby_lines:
@@ -213,7 +213,7 @@ class PRReviewBot:
                                             # If overlap in keywords (e.g. types)
                                             keywords = ["Security", "Bug", "Style", "Performance", "Typo"]
                                             for kw in keywords:
-                                                if f"**{kw}**" in comment['body'] and f"**{kw}**" in existing_body:
+                                                if f"**{kw}**" in ic['body'] and f"**{kw}**" in existing_body:
                                                     logger.info(f"  ⏭️ Skipping duplicate {kw} comment at {path}:{line} (similar to {path}:{l})")
                                                     is_duplicate = True
                                                     break
@@ -221,9 +221,9 @@ class PRReviewBot:
                                     if is_duplicate: break
 
                             if not is_duplicate:
-                                unique_comments.append(comment)
+                                unique_comments.append(ic)
                             else:
-                                logger.info(f"  ⏭️ Skipping duplicate comment for {comment['path']}:{comment['line']}")
+                                logger.info(f"  ⏭️ Skipping duplicate comment for {ic['path']}:{ic['line']}")
                         
                         inline_comments = unique_comments
                     except Exception as e:
