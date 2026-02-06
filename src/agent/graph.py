@@ -120,6 +120,12 @@ class Agent:
           Example: If the diff shows a variable rename from 'contents' to 'content', do NOT suggest renaming it again.
           Only report issues if the NEW code in the diff is still incorrect.
         
+        PRODUCTION-GRADE SUGGESTIONS:
+        1. Give the BEST fix FIRST: Do not provide a "patch" that will need a follow-up fix. 
+           Example: If there is a potential DivisionByZero, suggest a robust check (e.g., `if c != 0: ...`) rather than just setting `c = 1`.
+        2. Defensive Programming: Prefer input validation, type checks, and error handling over simple value adjustments.
+        3. Future-Proofing: Consider how the code might fail in other edge cases, not just the one obvious bug.
+        
         NOISE REDUCTION RULES:
         1. If you find a Logic Bug (e.g., empty loop `range(-1)`), do NOT also flag "Unused Variable" or "Unclear Purpose" for code inside that dead block. Report only the primary Logic Bug.
         2. Consolidate related feedback. Don't leave 3 comments on 3 consecutive lines if they stem from the same issue.
