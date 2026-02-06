@@ -320,6 +320,11 @@ class LLMReviewer:
                 skip_test_generation=not should_generate_tests
             )
             
+            # Parse the response (now returns JSON with code_review and generated_tests)
+            agent_result = json.loads(raw_response)
+            code_review_str = agent_result.get("code_review", "")
+            generated_tests_str = agent_result.get("generated_tests", "")
+            
             # Clean up potential markdown JSON from code_review
             clean_response = code_review_str
             # Use same robust regex as the escalation path
