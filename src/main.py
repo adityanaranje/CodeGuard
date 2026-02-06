@@ -442,10 +442,17 @@ def api_stats():
         repo=repo if repo != "all" else None
     )
     
+    # Get recent reviews for activity feed
+    reviews = db.get_recent_reviews(
+        repo=repo if repo != "all" else None,
+        author=author if author != "all" else None
+    )
+    
     return jsonify({
         "stats": stats,
-        "daily_stats": daily_stats,
-        "override_stats": override_stats
+        "trend_data": daily_stats,  # Frontend expects "trend_data"
+        "override_stats": override_stats,
+        "reviews": reviews          # Frontend expects "reviews"
     })
 
 

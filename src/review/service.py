@@ -555,8 +555,9 @@ class LLMReviewer:
                 body_parts.append(f"\n💡 *Suggestion:* {issue['suggestion']}")
             
             if issue.get('fixed_code'):
-                language = review.primary_language or "python"
-                body_parts.append(f"\n\n🔧 **Fixed Code:**\n```{language}\n{issue['fixed_code'].strip()}\n```")
+                # Use GitHub suggestion syntax for the "Accept Changes" button
+                # Note: No language identifier is used for suggestion blocks
+                body_parts.append(f"\n\n🔧 **Fixed Code:**\n```suggestion\n{issue['fixed_code'].strip()}\n```")
             
             comments.append({
                 "path": issue['file'],
