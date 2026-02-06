@@ -9,6 +9,7 @@ import hmac
 import json
 import sys
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from flask import Flask, request, jsonify, render_template
@@ -411,6 +412,26 @@ def webhook_handler():
     
     # Run review
     try:
+        # Loop Prevention: Skip if the sender is a bot
+        sender = payload.get("sender", {})
+        if sender.get("type") == "Bot" or "bot" in sender.get("login", "").lower():
+            logger.info(f"⏭️ Skipping review: Webhook triggered by bot ({sender.get('login')})")
+            return jsonify({"message": "Skipped: Bot-triggered event"}), 200
+
+        # Loop Prevention: Check for recent reviews on this PR (60s cooldown)
+        recent_reviews = db.get_recent_reviews(limit=1, repo=repo_name)
+        if recent_reviews:
+            last_review = recent_reviews[0]
+            if last_review["pr_number"] == pr_number:
+                try:
+                    # last_review["timestamp"] is ISO format string
+                    last_time = datetime.fromisoformat(last_review["timestamp"])
+                    if datetime.now(timezone.utc) - last_time < timedelta(seconds=60):
+                        logger.warning(f"⏳ Cooldown: Skipping review for PR #{pr_number} (reviewed < 60s ago)")
+                        return jsonify({"message": "Skipped: Cooldown in effect"}), 200
+                except (ValueError, TypeError, KeyError):
+                    pass # Fallback to running review if timestamp parsing fails
+
         # Pass installation_id if available (for App mode)
         bot = PRReviewBot(config, installation_id=installation_id)
         result = bot.review_pr(repo_name, pr_number, post_comment=True)
