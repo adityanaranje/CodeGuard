@@ -335,6 +335,18 @@ def webhook_handler():
                     try:
                         bot = PRReviewBot(config, installation_id=installation_id)
                         bot.github_client.approve_pr(repo_name, pr_number, "✅ Approved by maintainer command")
+                        
+                        # Log manual approval to DB to prevent override flagging
+                        db.log_review(
+                            repo_name=repo_name,
+                            pr_number=pr_number,
+                            author=commenter,
+                            verdict="PASS",
+                            violations_count=0,
+                            llm_severity=0,
+                            comment=f"✅ Manual approval by @{commenter}"
+                        )
+                        
                         return jsonify({"message": "PR approved"}), 200
                     except Exception as e:
                         logger.error(f"Failed to approve: {e}")
@@ -345,6 +357,18 @@ def webhook_handler():
                     try:
                         bot = PRReviewBot(config, installation_id=installation_id)
                         bot.github_client.request_changes(repo_name, pr_number, "❌ Changes requested by maintainer command")
+                        
+                        # Log manual rejection to DB
+                        db.log_review(
+                            repo_name=repo_name,
+                            pr_number=pr_number,
+                            author=commenter,
+                            verdict="FAIL",
+                            violations_count=1,
+                            llm_severity=5,
+                            comment=f"❌ Manual rejection by @{commenter}"
+                        )
+                        
                         return jsonify({"message": "PR rejected"}), 200
                     except Exception as e:
                         logger.error(f"Failed to reject: {e}")
@@ -355,6 +379,18 @@ def webhook_handler():
                     try:
                         bot = PRReviewBot(config, installation_id=installation_id)
                         bot.github_client.request_changes(repo_name, pr_number, "🔄 Changes requested by maintainer command")
+                        
+                        # Log manual request for changes to DB
+                        db.log_review(
+                            repo_name=repo_name,
+                            pr_number=pr_number,
+                            author=commenter,
+                            verdict="FAIL",
+                            violations_count=1,
+                            llm_severity=5,
+                            comment=f"🔄 Manual changes requested by @{commenter}"
+                        )
+                        
                         return jsonify({"message": "Changes requested"}), 200
                     except Exception as e:
                         logger.error(f"Failed to request changes: {e}")
