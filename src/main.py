@@ -164,18 +164,55 @@ class PRReviewBot:
                 # Post inline comments if there are any issues with file/line info
                 inline_comments = self.llm_reviewer.get_inline_comments(llm_review)
                 if inline_comments:
-                    logger.info(f"  💬 Posting {len(inline_comments)} inline comment(s)...")
+                    # Deduplicate comments
                     try:
-                        self.github_client.post_inline_comments(
-                            repo_name=repo_name,
-                            pr_number=pr_number,
-                            comments=inline_comments,
-                            body="Code suggestions with fixes",
-                            event="COMMENT"
-                        )
-                        logger.info("  ✅ Inline comments posted successfully!")
+                        existing_comments = self.github_client.get_comments(repo_name, pr_number)
+                        existing_bodies = [c.body for c in existing_comments if c.body]
+                        
+                        unique_comments = []
+                        for comment in inline_comments:
+                            is_duplicate = False
+                            # Check if a substantially similar comment already exists
+                            # Simple check: if 80% of the new comment is in an existing comment
+                            # This handles cases where the bot might vary the intro/outro slightly
+                            for existing_body in existing_bodies:
+                                if comment['body'] in existing_body or existing_body in comment['body']:
+                                    is_duplicate = True
+                                    break
+                                    
+                                # Check for specific fix suggestions which are often unique
+                                if "```suggestion" in comment['body'] and "```suggestion" in existing_body:
+                                    # Extract just the code part for comparison
+                                    new_code = comment['body'].split("```suggestion")[1].split("```")[0].strip()
+                                    existing_code = existing_body.split("```suggestion")[1].split("```")[0].strip()
+                                    if new_code == existing_code:
+                                        is_duplicate = True
+                                        break
+                            
+                            if not is_duplicate:
+                                unique_comments.append(comment)
+                            else:
+                                logger.info(f"  ⏭️ Skipping duplicate comment for {comment['path']}:{comment['line']}")
+                        
+                        inline_comments = unique_comments
                     except Exception as e:
-                        logger.warning(f"  ⚠️ Failed to post inline comments: {e}")
+                        logger.warning(f"  ⚠️ Failed to deduplicate comments: {e}")
+
+                    if inline_comments:
+                        logger.info(f"  💬 Posting {len(inline_comments)} inline comment(s)...")
+                        try:
+                            self.github_client.post_inline_comments(
+                                repo_name=repo_name,
+                                pr_number=pr_number,
+                                comments=inline_comments,
+                                body="Code suggestions with fixes",
+                                event="COMMENT"
+                            )
+                            logger.info("  ✅ Inline comments posted successfully!")
+                        except Exception as e:
+                            logger.warning(f"  ⚠️ Failed to post inline comments: {e}")
+                    else:
+                         logger.info("  ✨ No new unique comments to post.")
                 
                 # Auto-commit fixes if enabled
                 if self.config.enable_auto_fix_commits and llm_review.issues:

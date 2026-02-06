@@ -146,6 +146,11 @@ class LLMReviewer:
         
         return all_whitespace
     
+    def _has_merge_conflicts(self, diff_text: str) -> bool:
+        """Check if the diff text contains merge conflict markers."""
+        conflict_markers = ['<<<<<<<', '=======', '>>>>>>>']
+        return any(marker in diff_text for marker in conflict_markers)
+    
     def _is_documentation_only(self, diffs: List[FileDiff]) -> bool:
         """Check if PR contains only documentation changes."""
         doc_extensions = {'md', 'txt', 'rst', 'adoc', 'pdf'}
@@ -191,6 +196,9 @@ class LLMReviewer:
         # Filter by file size
         max_size_bytes = self.config.max_file_size_kb * 1024
         code_diffs = [d for d in code_diffs if len(d.full_diff_text) <= max_size_bytes]
+
+        # Filter out files with merge conflicts
+        code_diffs = [d for d in code_diffs if not self._has_merge_conflicts(d.full_diff_text)]
         
         if not code_diffs:
             return LLMReview(

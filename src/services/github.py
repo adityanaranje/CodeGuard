@@ -109,6 +109,21 @@ class GitHubClient:
         repo = self.get_repo(repo_name)
         return repo.get_pull(pr_number)
     
+    def get_comments(self, repo_name: str, pr_number: int) -> List[Any]:
+        """
+        Get all comments on a PR (review comments and issue comments).
+        
+        Args:
+            repo_name: Repository in format "owner/repo".
+            pr_number: PR number.
+            
+        Returns:
+            List of comment objects.
+        """
+        pr = self.get_pr(repo_name, pr_number)
+        return list(pr.get_issue_comments()) + list(pr.get_review_comments())
+
+    
     def get_pr_details(self, repo_name: str, pr_number: int) -> PRDetails:
         """
         Get detailed PR information including files.
