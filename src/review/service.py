@@ -327,22 +327,12 @@ class LLMReviewer:
             
             # Clean up potential markdown JSON from code_review
             clean_response = code_review_str
-            # Use same robust regex as the escalation path
-            json_match = re.search(r'```json\s*(\{.*?\})\s*```', clean_response, re.DOTALL)
-            if not json_match:
-                json_match = re.search(r'```\s*(\{.*?\})\s*```', clean_response, re.DOTALL)
-            if not json_match:
-                json_match = re.search(r'(\{.*\})', clean_response, re.DOTALL)
-            
-            if json_match:
-                clean_response = json_match.group(1)
-
             try:
-                review_data = json.loads(clean_response, strict=False)
-            except json.JSONDecodeError:
-                # If first parse fails, try the newline fix immediately
-                fixed_response = re.sub(r'(?<!\\)\n', r'\\n', clean_response)
-                review_data = json.loads(fixed_response, strict=False)
+                review_data = self._fix_json_robustly(clean_response)
+            except Exception as e:
+                logger.error(f"Failed to parse or repair JSON: {e}")
+                # Fallback handled by parent try-except
+                raise
 
             severity_score = min(10, max(1, review_data.get("severity_score", 5)))
             
@@ -380,18 +370,10 @@ class LLMReviewer:
                     clean_response = json_match.group(1)
                 
                 try:
-                    review_data = json.loads(clean_response, strict=False)
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Initial JSON parse failed: {e}. Attempting deep clean...")
-                    # Try simple cleaning: replace unescaped newlines in middle of strings
-                    # (Experimental, but often helpful)
-                    fixed_response = re.sub(r'(?<!\\)\n', r'\\n', clean_response)
-                    try:
-                        review_data = json.loads(fixed_response, strict=False)
-                    except json.JSONDecodeError:
-                        # Final attempt: try to find anything that looks like JSON
-                        # or just raise to trigger the fallback
-                        raise
+                    review_data = self._fix_json_robustly(clean_response)
+                except Exception as e:
+                    logger.error(f"Failed to parse or repair escalated JSON: {e}")
+                    raise
 
                 severity_score = min(10, max(1, review_data.get("severity_score", 5)))
                 print(f"Large model review complete. Final severity: {severity_score}")
@@ -465,6 +447,53 @@ class LLMReviewer:
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         return ext in code_extensions
     
+    def _fix_json_robustly(self, text: str) -> Dict[str, Any]:
+        """
+        Attempts to fix common LLM JSON errors and parse the result.
+        """
+        if not text:
+            raise ValueError("Empty response")
+            
+        # 1. Try standard parse first (with strict=False)
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Extract largest JSON-like block if not already done
+        json_match = re.search(r'(\{.*\})', text, re.DOTALL)
+        if json_match:
+            text = json_match.group(1)
+
+        # 3. Fix common structural issues
+        # Remove trailing commas in lists/objects
+        text = re.sub(r',\s*([\]}])', r'\1', text)
+        
+        # 4. Try parsing again
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON Structure repair failed: {e}. Attempting string-level repair...")
+
+        # 5. Fix unescaped newlines inside strings
+        # This is surgical: find content between quotes and fix newlines
+        def fix_newlines(match):
+            content = match.group(1)
+            # Replace literal newlines with escaped \n
+            # Use a regular string to avoid f-string backslash restrictions in older Python
+            fixed = content.replace('\n', '\\n')
+            return '"' + fixed + '"'
+        
+        # Find all double-quoted strings and fix their internal newlines
+        # This is a heuristic but safer than global replace
+        repair_text = re.sub(r'"((?:[^"\\]|\\.)*)"', fix_newlines, text, flags=re.DOTALL)
+        
+        try:
+            return json.loads(repair_text, strict=False)
+        except json.JSONDecodeError:
+            # Final fallback: if it's still failing, we can't safely repair it
+            raise
+
     def format_review_markdown(self, review: LLMReview) -> str:
         """
         Format the LLM review as markdown for PR comment.
