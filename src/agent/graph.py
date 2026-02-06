@@ -126,6 +126,18 @@ class Agent:
         2. Defensive Programming: Prefer input validation, type checks, and error handling over simple value adjustments.
         3. Future-Proofing: Consider how the code might fail in other edge cases, not just the one obvious bug.
         
+        MANDATORY CONSOLIDATION (ONE ISSUE PER BLOCK):
+        1. NEVER report separate issues for the same line or adjacent lines (within 5 lines of each other).
+        2. If a block of code has a Bug, a Style issue, and a Security risk, you MUST combine them into ONE single entry in the 'issues' list.
+        3. The 'fixed_code' for that single entry MUST solve ALL the identified problems simultaneously.
+           Example of BAD (Iterative): 
+             - Issue 1: "Fix division by zero on line 23"
+             - Issue 2: "Rename magic number '1' on line 21"
+           Example of GOOD (Consolidated):
+             - Issue 1: "Fix division by zero and improve variable naming in the calculation block (lines 21-23). 
+                        Description: The code uses a magic number and lacks zero-division protection.
+                        Fixed Code: (Provides a single block that names the variable AND adds the check)."
+        
         NOISE REDUCTION RULES:
         1. If you find a Logic Bug (e.g., empty loop `range(-1)`), do NOT also flag "Unused Variable" or "Unclear Purpose" for code inside that dead block. Report only the primary Logic Bug.
         2. Consolidate related feedback. Don't leave 3 comments on 3 consecutive lines if they stem from the same issue.
