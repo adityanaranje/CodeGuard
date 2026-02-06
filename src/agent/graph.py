@@ -87,6 +87,10 @@ class Agent:
         Responsibilities:
         - Enforce Python best practices, Maintainability, Performance, Security.
         
+        Input Format:
+        The PR Diff now includes line numbers at the start of each line (e.g., "12: + code"). 
+        Use these EXACT line numbers when reporting issues.
+        
         Output Format:
         You must return a VALID JSON object (clean, no markdown formatting around it if possible) with:
         {
@@ -112,6 +116,10 @@ class Agent:
         - DO NOT suggest changes that are ALREADY PRESENT in the PR Diff. 
           Example: If the diff shows a variable rename from 'contents' to 'content', do NOT suggest renaming it again.
           Only report issues if the NEW code in the diff is still incorrect.
+        
+        NOISE REDUCTION RULES:
+        1. If you find a Logic Bug (e.g., empty loop `range(-1)`), do NOT also flag "Unused Variable" or "Unclear Purpose" for code inside that dead block. Report only the primary Logic Bug.
+        2. Consolidate related feedback. Don't leave 3 comments on 3 consecutive lines if they stem from the same issue.
         """
         
         messages = [

@@ -66,17 +66,23 @@ class FileDiff:
     
     @property
     def full_diff_text(self) -> str:
-        """Get the full diff as text for LLM review."""
+        """Get the full diff as text for LLM review, with line numbers."""
         lines = [f"File: {self.filename} ({self.status})"]
         for hunk in self.hunks:
             lines.append(hunk.header)
             for line in hunk.lines:
+                line_prefix = ""
+                if line.new_line_number:
+                    line_prefix = f"{line.new_line_number}: "
+                elif line.old_line_number:
+                    line_prefix = f"{line.old_line_number}: "
+                
                 if line.change_type == ChangeType.ADDED:
-                    lines.append(f"+{line.content}")
+                    lines.append(f"{line_prefix}+{line.content}")
                 elif line.change_type == ChangeType.REMOVED:
-                    lines.append(f"-{line.content}")
+                    lines.append(f"{line_prefix}-{line.content}")
                 else:
-                    lines.append(f" {line.content}")
+                    lines.append(f"{line_prefix} {line.content}")
         return "\n".join(lines)
 
 
