@@ -473,26 +473,41 @@ class LLMReviewer:
         try:
             return json.loads(text, strict=False)
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON Structure repair failed: {e}. Attempting string-level repair...")
+            logger.warning(f"JSON Structure repair failed: {e}. Attempting more aggressive repair...")
 
-        # 5. Fix unescaped newlines inside strings
-        # This is surgical: find content between quotes and fix newlines
+        # 5. Fix missing commas between elements (Common Groq/LLM issue)
+        # Between objects: } { -> }, {
+        text = re.sub(r'\}\s*\{', '}, {', text)
+        # Between arrays: ] [ -> ], [
+        text = re.sub(r'\]\s*\[', '], [', text)
+        # Between object properties: "key": value "next_key": -> "key": value, "next_key":
+        text = re.sub(r'"\s*("\w+":)', r'", \1', text)
+        text = re.sub(r'(\d)\s*("\w+":)', r'\1, \2', text)
+        text = re.sub(r'(true|false|null)\s*("\w+":)', r'\1, \2', text)
+
+        # 6. Fix missing commas in arrays (Between strings: "a" "b" -> "a", "b")
+        text = re.sub(r'"\s+"', '", "', text)
+
+        # 7. Fix unescaped newlines inside strings
         def fix_newlines(match):
             content = match.group(1)
-            # Replace literal newlines with escaped \n
-            # Use a regular string to avoid f-string backslash restrictions in older Python
             fixed = content.replace('\n', '\\n')
             return '"' + fixed + '"'
         
-        # Find all double-quoted strings and fix their internal newlines
-        # This is a heuristic but safer than global replace
         repair_text = re.sub(r'"((?:[^"\\]|\\.)*)"', fix_newlines, text, flags=re.DOTALL)
         
         try:
             return json.loads(repair_text, strict=False)
         except json.JSONDecodeError:
-            # Final fallback: if it's still failing, we can't safely repair it
-            raise
+            # Final attempt for nested structures: e.g. "key": [...] "next_key":
+            repair_text = re.sub(r'\]\s*("\w+":)', r'], \1', repair_text)
+            repair_text = re.sub(r'\}\s*("\w+":)', r'}, \1', repair_text)
+            
+            try:
+                return json.loads(repair_text, strict=False)
+            except json.JSONDecodeError:
+                # Final fallback: if it's still failing, we can't safely repair it
+                raise
 
     def format_review_markdown(self, review: LLMReview) -> str:
         """
