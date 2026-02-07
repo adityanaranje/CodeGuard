@@ -515,7 +515,39 @@ class LLMReviewer:
         # 9. Fix missing commas in arrays (Between strings: "a" "b" -> "a", "b")
         text = re.sub(r'"\s+"', '", "', text)
 
-        # 10. Fix unescaped newlines inside strings
+        # 10. Fix unescaped double quotes inside values (line by line heuristic)
+        def refined_escape(match):
+            text_block = match.group(0)
+            lines = text_block.split('\n')
+            fixed_lines = []
+            for line in lines:
+                # Identify where the 'value' part starts
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    prefix = parts[0] + ':'
+                    value_part = parts[1]
+                else:
+                    prefix = ""
+                    value_part = line
+                
+                # Find first and last quote in the value/item part
+                first_q = value_part.find('"')
+                last_q = value_part.rfind('"')
+                
+                if first_q != -1 and last_q != -1 and first_q != last_q:
+                    # We have a string boundary. Escape raw quotes in between.
+                    inner = value_part[first_q+1 : last_q]
+                    if '"' in inner:
+                        safe_inner = re.sub(r'(?<!\\)"', r'\"', inner)
+                        fixed_line = prefix + value_part[:first_q+1] + safe_inner + value_part[last_q:]
+                        fixed_lines.append(fixed_line)
+                        continue
+                fixed_lines.append(line)
+            return '\n'.join(fixed_lines)
+
+        text = refined_escape(text)
+
+        # 11. Fix unescaped newlines inside strings
         def fix_newlines(match):
             content = match.group(1)
             fixed = content.replace('\n', '\\n')
