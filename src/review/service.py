@@ -516,8 +516,7 @@ class LLMReviewer:
         text = re.sub(r'"\s+"', '", "', text)
 
         # 10. Fix unescaped double quotes inside values (line by line heuristic)
-        def refined_escape(match):
-            text_block = match.group(0)
+        def refined_escape(text_block):
             lines = text_block.split('\n')
             fixed_lines = []
             for line in lines:
