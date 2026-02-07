@@ -439,6 +439,7 @@ class LLMReviewer:
     def _fix_json_robustly(self, text: str) -> Dict[str, Any]:
         """
         Attempts to fix common LLM JSON errors and parse the result.
+        Uses a more robust approach to handle multi-line strings with embedded quotes.
         """
         if not text:
             raise ValueError("Empty response")
@@ -449,7 +450,7 @@ class LLMReviewer:
         except json.JSONDecodeError:
             pass
 
-        # 2. Extract largest JSON-like block (Greedy matching is safer for nested objects)
+        # 2. Extract largest JSON-like block
         # Try markdown blocks first
         json_match = re.search(r'```json\s*(\{.*\})\s*```', text, re.DOTALL)
         if not json_match:
@@ -467,15 +468,11 @@ class LLMReviewer:
         text = re.sub(r'\bTrue\b', 'true', text)
         text = re.sub(r'\bFalse\b', 'false', text)
 
-        # 4. Handle single quotes (Convert to double quotes)
-        # Handle single quoted keys: 'key': -> "key":
-        text = re.sub(r"'\s*([^'\s\"]+)\s*':", r'"\1":', text)
-        # Handle single quoted values (heuristic): : 'value' -> : "value"
-        text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
-        # Handle single quoted array items
-        text = re.sub(r"'\s*,\s*'", r'", "', text)
-        text = re.sub(r"\[\s*'([^']*)'", r'["\1"', text)
-        text = re.sub(r"'([^']*)'\s*\]", r'"\1"]', text)
+        # 4. Try parsing after basic fixes
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError:
+            pass
 
         # 5. Quote common unquoted keys (Schema specific)
         common_keys = [
@@ -485,8 +482,8 @@ class LLMReviewer:
             "start_line", "generated_tests", "review_data", "code_review"
         ]
         for key in common_keys:
-            # Match unquoted key followed by colon, ensuring it's not already quoted or part of a path
-            text = re.sub(rf'(?<!["/])\b{key}\b(?<!["/])\s*:', rf'"{key}":', text)
+            # Match unquoted key followed by colon, ensuring it's not already quoted
+            text = re.sub(rf'(?<!["\'])\b{key}\b\s*:', rf'"{key}":', text)
 
         # 6. Fix common structural issues
         # Remove trailing commas in lists/objects
@@ -498,61 +495,134 @@ class LLMReviewer:
         except json.JSONDecodeError:
             pass
 
-        # 8. Fix missing commas between elements (Common Groq/LLM issue)
+        # 8. Fix missing commas between elements
         # Between objects: } { -> }, {
         text = re.sub(r'\}\s*\{', '}, {', text)
         # Between arrays: ] [ -> ], [
         text = re.sub(r'\]\s*\[', '], [', text)
         
-        # Between properties: value "next_key": -> value, "next_key":
-        # Handle various value endings (quotes, digits, booleans, objects, arrays)
-        text = re.sub(r'("\s*)("\w+":)', r'\1, \2', text)
-        text = re.sub(r'(\d)\s*("\w+":)', r'\1, \2', text)
-        text = re.sub(r'(true|false|null)\s*("\w+":)', r'\1, \2', text)
-        text = re.sub(r'\]\s*("\w+":)', r'], \1', text)
-        text = re.sub(r'\}\s*("\w+":)', r'}, \1', text)
-
-        # 9. Fix missing commas in arrays (Between strings: "a" "b" -> "a", "b")
-        text = re.sub(r'"\s+"', '", "', text)
-
-        # 10. Fix unescaped double quotes inside values (line by line heuristic)
-        def refined_escape(text_block):
-            lines = text_block.split('\n')
-            fixed_lines = []
-            for line in lines:
-                # Identify where the 'value' part starts
-                if ':' in line:
-                    parts = line.split(':', 1)
-                    prefix = parts[0] + ':'
-                    value_part = parts[1]
-                else:
-                    prefix = ""
-                    value_part = line
-                
-                # Find first and last quote in the value/item part
-                first_q = value_part.find('"')
-                last_q = value_part.rfind('"')
-                
-                if first_q != -1 and last_q != -1 and first_q != last_q:
-                    # We have a string boundary. Escape raw quotes in between.
-                    inner = value_part[first_q+1 : last_q]
-                    if '"' in inner:
-                        safe_inner = re.sub(r'(?<!\\)"', r'\"', inner)
-                        fixed_line = prefix + value_part[:first_q+1] + safe_inner + value_part[last_q:]
-                        fixed_lines.append(fixed_line)
-                        continue
-                fixed_lines.append(line)
-            return '\n'.join(fixed_lines)
-
-        text = refined_escape(text)
-
-        # 11. Fix unescaped newlines inside strings
-        def fix_newlines(match):
-            content = match.group(1)
-            fixed = content.replace('\n', '\\n')
-            return '"' + fixed + '"'
+        # Between properties - be more careful to avoid breaking strings
+        # Only add comma if we see a closing quote followed by opening quote with key pattern
+        text = re.sub(r'"\s*\n\s*"(\w+)":', r'",\n"\1":', text)
         
-        repair_text = re.sub(r'"((?:[^"\\]|\\.)*)"', fix_newlines, text, flags=re.DOTALL)
+        # 9. Try parsing again
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError:
+            pass
+
+        # 10. Fix unescaped quotes and newlines in string values
+        # Use a simpler, more reliable approach: find all strings and fix their content
+        def fix_json_strings(text_to_fix):
+            """
+            Fix string values by escaping unescaped quotes and newlines.
+            Uses regex to find strings, then fixes their content.
+            """
+            # This regex matches: "key": "value" patterns
+            # We'll process the value part to escape embedded quotes and newlines
+            
+            def fix_string_value(match):
+                """Fix a single string value."""
+                full_match = match.group(0)
+                key_part = match.group(1)  # Everything before the value
+                value_content = match.group(2)  # The string content (without quotes)
+                after_part = match.group(3)  # Everything after the value
+                
+                # Escape unescaped quotes in the value
+                # First, temporarily mark already-escaped quotes
+                value_content = value_content.replace('\\"', '\x00ESCAPED_QUOTE\x00')
+                # Now escape any remaining quotes
+                value_content = value_content.replace('"', '\\"')
+                # Restore the originally-escaped quotes
+                value_content = value_content.replace('\x00ESCAPED_QUOTE\x00', '\\"')
+                
+                # Escape unescaped newlines
+                value_content = value_content.replace('\\n', '\x00ESCAPED_NEWLINE\x00')
+                value_content = value_content.replace('\n', '\\n')
+                value_content = value_content.replace('\x00ESCAPED_NEWLINE\x00', '\\n')
+                
+                return f'{key_part}"{value_content}"{after_part}'
+            
+            # Match: "key": "value"
+            # Where value can contain anything including newlines
+            # Pattern: ("key"\s*:\s*)"(.*?)"(\s*[,}\]])
+            # But this is too greedy. We need to be more careful.
+            
+            # Better approach: match line by line for simple cases,
+            # but handle multi-line strings specially
+            
+            # Actually, let's use a different strategy:
+            # Find all ": " patterns, then find the string value after each one
+            result = []
+            i = 0
+            
+            while i < len(text_to_fix):
+                # Look for ": " pattern (key-value separator)
+                if i < len(text_to_fix) - 2 and text_to_fix[i:i+2] == '":':
+                    # Found a key ending. Copy it.
+                    result.append(text_to_fix[i:i+2])
+                    i += 2
+                    
+                    # Skip whitespace
+                    while i < len(text_to_fix) and text_to_fix[i] in ' \t\n\r':
+                        result.append(text_to_fix[i])
+                        i += 1
+                    
+                    # Check if next char is a quote (string value)
+                    if i < len(text_to_fix) and text_to_fix[i] == '"':
+                        # Start of string value
+                        result.append('"')
+                        i += 1
+                        
+                        # Now collect the string content until we find the closing quote
+                        # We need to find an unescaped quote followed by , } ] or newline
+                        string_content = []
+                        while i < len(text_to_fix):
+                            char = text_to_fix[i]
+                            
+                            # Check if this might be the end of the string
+                            if char == '"':
+                                # Look ahead to see what follows
+                                lookahead_start = i + 1
+                                while lookahead_start < len(text_to_fix) and text_to_fix[lookahead_start] in ' \t\r\n':
+                                    lookahead_start += 1
+                                
+                                if lookahead_start < len(text_to_fix) and text_to_fix[lookahead_start] in ',}]':
+                                    # This is the end of the string value
+                                    # Now fix the content we collected
+                                    content_str = ''.join(string_content)
+                                    
+                                    # Escape unescaped quotes
+                                    content_str = content_str.replace('\\"', '\x00ESC_Q\x00')
+                                    content_str = content_str.replace('"', '\\"')
+                                    content_str = content_str.replace('\x00ESC_Q\x00', '\\"')
+                                    
+                                    # Escape unescaped newlines
+                                    content_str = content_str.replace('\\n', '\x00ESC_N\x00')
+                                    content_str = content_str.replace('\n', '\\n')
+                                    content_str = content_str.replace('\x00ESC_N\x00', '\\n')
+                                    
+                                    result.append(content_str)
+                                    result.append('"')
+                                    i += 1
+                                    break
+                                else:
+                                    # Not the end, this quote is part of the content
+                                    string_content.append(char)
+                                    i += 1
+                            else:
+                                string_content.append(char)
+                                i += 1
+                        
+                        continue
+                
+                # Not a key-value pattern, just copy the character
+                result.append(text_to_fix[i])
+                i += 1
+            
+            return ''.join(result)
+        
+        repair_text = fix_json_strings(text)
         
         try:
             return json.loads(repair_text, strict=False)
