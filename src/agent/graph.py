@@ -137,7 +137,15 @@ class Agent:
 
         CRITICAL RULES - NO EXCEPTIONS:
         
-        0. MULTI-LINE SUGGESTIONS:
+        0. LANGUAGE-APPROPRIATE SYNTAX IN fixed_code:
+           - The 'fixed_code' field must contain valid code in the target language
+           - For Python: use 'None', 'True', 'False' (NOT 'null', 'true', 'false')
+           - For JavaScript: use 'null', 'true', 'false'
+           - DO NOT mix JSON syntax with the target programming language
+           - Example WRONG: return null  (in Python)
+           - Example CORRECT: return None  (in Python)
+        
+        1. MULTI-LINE SUGGESTIONS:
            - If an issue covers multiple lines, specify 'start_line' (first line) and 'line' (last line).
            - The 'fixed_code' MUST be a drop-in replacement for EXACTLY the range [start_line, line].
            - DO NOT include lines outside this range in 'fixed_code'.

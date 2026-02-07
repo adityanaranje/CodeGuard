@@ -486,8 +486,9 @@ class LLMReviewer:
             text = re.sub(rf'(?<!["\'])\b{key}\b\s*:', rf'"{key}":', text)
 
         # 6. Fix common structural issues
-        # Remove trailing commas in lists/objects
-        text = re.sub(r',\s*([\]}])', r'\1', text)
+        # Remove trailing commas in lists/objects (more aggressive)
+        text = re.sub(r',\s*}', '}', text)
+        text = re.sub(r',\s*]', ']', text)
         
         # 7. Try parsing again
         try:
@@ -504,6 +505,11 @@ class LLMReviewer:
         # Between properties - be more careful to avoid breaking strings
         # Only add comma if we see a closing quote followed by opening quote with key pattern
         text = re.sub(r'"\s*\n\s*"(\w+)":', r'",\n"\1":', text)
+        
+        # 9. Quote any remaining unquoted property names (aggressive fallback)
+        # Match: word followed by colon (not inside quotes)
+        # This is a fallback for any keys we didn't catch above
+        text = re.sub(r'(?<=[{\s,])\s*([a-zA-Z_]\w*)\s*:', r'"\1":', text)
         
         # 9. Try parsing again
         try:
