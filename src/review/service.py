@@ -592,15 +592,25 @@ class LLMReviewer:
                                     # Now fix the content we collected
                                     content_str = ''.join(string_content)
                                     
-                                    # Escape unescaped quotes
-                                    content_str = content_str.replace('\\"', '\x00ESC_Q\x00')
-                                    content_str = content_str.replace('"', '\\"')
-                                    content_str = content_str.replace('\x00ESC_Q\x00', '\\"')
+                                    # Fix escape sequences
+                                    # First, protect already-valid escape sequences
+                                    valid_escapes = ['\\n', '\\t', '\\r', '\\\\', '\\"', "\\'", '\\b', '\\f']
+                                    placeholders = {}
+                                    for idx, esc in enumerate(valid_escapes):
+                                        placeholder = f'\x00ESC{idx}\x00'
+                                        placeholders[placeholder] = esc
+                                        content_str = content_str.replace(esc, placeholder)
                                     
-                                    # Escape unescaped newlines
-                                    content_str = content_str.replace('\\n', '\x00ESC_N\x00')
-                                    content_str = content_str.replace('\n', '\\n')
-                                    content_str = content_str.replace('\x00ESC_N\x00', '\\n')
+                                    # Now escape any remaining quotes and backslashes
+                                    content_str = content_str.replace('\\', '\\\\')  # Escape remaining backslashes
+                                    content_str = content_str.replace('"', '\\"')   # Escape quotes
+                                    content_str = content_str.replace('\n', '\\n')  # Escape literal newlines
+                                    content_str = content_str.replace('\r', '\\r')  # Escape literal carriage returns
+                                    content_str = content_str.replace('\t', '\\t')  # Escape literal tabs
+                                    
+                                    # Restore the originally-valid escape sequences
+                                    for placeholder, esc in placeholders.items():
+                                        content_str = content_str.replace(placeholder, esc)
                                     
                                     result.append(content_str)
                                     result.append('"')
