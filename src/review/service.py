@@ -459,49 +459,63 @@ class LLMReviewer:
         
         if json_match:
             text = json_match.group(1)
+            # Remove trailing triple backticks if greedy matching caught them
+            text = re.sub(r'```.*$', '', text, flags=re.DOTALL).strip()
 
-        # 3. Handle single quotes (Convert to double quotes)
-        # This is tricky as we don't want to break double quotes inside strings
-        # Use a heuristic to replace single quotes that look like delimiters
-        text = re.sub(r"'\s*(\"|\w+)\s*':", r'"\1":', text) # single quoted keys
-        text = re.sub(r":\s*'([^']*)'", r': "\1"', text)   # single quoted values
-        text = re.sub(r"'\s*,\s*'", r'", "', text)         # single quoted items in array
-        text = re.sub(r"\[\s*'([^']*)'", r'["\1"', text)  # first single quoted item in array
-        text = re.sub(r"'([^']*)'\s*\]", r'"\1"]', text)  # last single quoted item in array
+        # 3. Handle Python-isms (None, True, False) that LLMs often leak
+        text = re.sub(r'\bNone\b', 'null', text)
+        text = re.sub(r'\bTrue\b', 'true', text)
+        text = re.sub(r'\bFalse\b', 'false', text)
 
-        # 4. Fix common structural issues
+        # 4. Handle single quotes (Convert to double quotes)
+        # Handle single quoted keys: 'key': -> "key":
+        text = re.sub(r"'\s*([^'\s\"]+)\s*':", r'"\1":', text)
+        # Handle single quoted values (heuristic): : 'value' -> : "value"
+        text = re.sub(r":\s*'([^']*)'", r': "\1"', text)
+        # Handle single quoted array items
+        text = re.sub(r"'\s*,\s*'", r'", "', text)
+        text = re.sub(r"\[\s*'([^']*)'", r'["\1"', text)
+        text = re.sub(r"'([^']*)'\s*\]", r'"\1"]', text)
+
+        # 5. Quote common unquoted keys (Schema specific)
+        common_keys = [
+            "summary", "severity_score", "issues", "suggestions", "security_concerns", 
+            "positive_feedback", "type", "file", "line", "description", "suggestion", 
+            "fixed_code", "confidence", "evidence", "attack_vector", "severity",
+            "start_line", "generated_tests", "review_data", "code_review"
+        ]
+        for key in common_keys:
+            # Match unquoted key followed by colon, ensuring it's not already quoted or part of a path
+            text = re.sub(rf'(?<!["/])\b{key}\b(?<!["/])\s*:', rf'"{key}":', text)
+
+        # 6. Fix common structural issues
         # Remove trailing commas in lists/objects
         text = re.sub(r',\s*([\]}])', r'\1', text)
         
-        # 5. Quote common unquoted keys
-        common_keys = ["summary", "severity_score", "issues", "suggestions", "security_concerns", 
-                       "positive_feedback", "type", "file", "line", "description", "suggestion", 
-                       "fixed_code", "confidence", "evidence", "attack_vector", "severity"]
-        for key in common_keys:
-            text = re.sub(rf'(?<!")\b{key}\b(?<!")\s*:', rf'"{key}":', text)
-
-        # 6. Try parsing again
+        # 7. Try parsing again
         try:
             return json.loads(text, strict=False)
-        except json.JSONDecodeError as e:
-            logger.warning(f"JSON Structure repair failed: {e}. Attempting more aggressive repair...")
+        except json.JSONDecodeError:
+            pass
 
-        # 7. Fix missing commas between elements (Common Groq/LLM issue)
+        # 8. Fix missing commas between elements (Common Groq/LLM issue)
         # Between objects: } { -> }, {
         text = re.sub(r'\}\s*\{', '}, {', text)
         # Between arrays: ] [ -> ], [
         text = re.sub(r'\]\s*\[', '], [', text)
-        # Between object properties: "key": value "next_key": -> "key": value, "next_key":
-        text = re.sub(r'"\s*("\w+":)', r'", \1', text)
+        
+        # Between properties: value "next_key": -> value, "next_key":
+        # Handle various value endings (quotes, digits, booleans, objects, arrays)
+        text = re.sub(r'("\s*)("\w+":)', r'\1, \2', text)
         text = re.sub(r'(\d)\s*("\w+":)', r'\1, \2', text)
         text = re.sub(r'(true|false|null)\s*("\w+":)', r'\1, \2', text)
         text = re.sub(r'\]\s*("\w+":)', r'], \1', text)
         text = re.sub(r'\}\s*("\w+":)', r'}, \1', text)
 
-        # 8. Fix missing commas in arrays (Between strings: "a" "b" -> "a", "b")
+        # 9. Fix missing commas in arrays (Between strings: "a" "b" -> "a", "b")
         text = re.sub(r'"\s+"', '", "', text)
 
-        # 9. Fix unescaped newlines inside strings
+        # 10. Fix unescaped newlines inside strings
         def fix_newlines(match):
             content = match.group(1)
             fixed = content.replace('\n', '\\n')
@@ -512,10 +526,16 @@ class LLMReviewer:
         try:
             return json.loads(repair_text, strict=False)
         except json.JSONDecodeError as e:
-            # Diagnostics: log the failing content to see what's happening
-            logger.error(f"Final JSON repair attempt failed. Error: {e}")
-            logger.debug(f"Malformed JSON content (first 1000 chars): {repair_text[:1000]}")
-            # Final fallback: if it's still failing, we can't safely repair it
+            # Aggressive error logging for debugging
+            logger.error("-" * 40)
+            logger.error(f"FINAL JSON REPAIR FAILED: {e}")
+            logger.error(f"Problematic content around error (char {e.pos}):")
+            start = max(0, e.pos - 100)
+            end = min(len(repair_text), e.pos + 100)
+            logger.error(f"...{repair_text[start:end]}...")
+            logger.error("-" * 40)
+            # Log full content for deep analysis if needed (first 5000 chars)
+            logger.debug(f"Full malformed text: {repair_text[:5000]}")
             raise
 
     def format_review_markdown(self, review: LLMReview) -> str:
